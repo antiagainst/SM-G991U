@@ -193,6 +193,9 @@ struct cam_ois_ctrl_t {
 	uint32_t err_reg;
 	uint32_t gyro_raw_x;
 	uint32_t gyro_raw_y;
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+	uint32_t gyro_raw_z;
+#endif
 	uint32_t efs_cal;
 	uint32_t poles[6];
 	uint32_t gyro_orientation;

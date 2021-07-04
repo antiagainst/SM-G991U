@@ -446,6 +446,8 @@ int32_t cam_cmd_buf_parser(struct csiphy_device *csiphy_dev,
 		cam_cmd_csiphy_info->secure_mode;
 	csiphy_dev->csiphy_info[index].mipi_flags =
 		cam_cmd_csiphy_info->mipi_flags;
+	csiphy_dev->csiphy_info[index].shooting_mode =
+		cam_cmd_csiphy_info->shooting_mode;
 
 	lane_assign = csiphy_dev->csiphy_info[index].lane_assign;
 	lane_cnt = csiphy_dev->csiphy_info[index].lane_cnt;
@@ -668,8 +670,14 @@ static void cam_csiphy_cphy_overwrite_config(
 #endif
 
 #if defined(CONFIG_SEC_P3Q_PROJECT)
-		int wide_tunning_addr[] = { 0x98C, 0xA8C, 0xB8C };
-		int wide_tunning_data[] = { 0xA0, 0xA0, 0xA0 };
+		int wide_tunning_addr[] = { 0x98C, 0xA8C, 0xB8C,
+									0x9B4, 0xAB4, 0xBB4 };
+		int wide_tunning_data[] = { 0xA0, 0xA0, 0xA0,
+									0x08, 0x08, 0x08 };
+
+		int ssm_tunning_addr[] = { 0x9B4, 0xAB4, 0xBB4};
+		int ssm_tunning_data[] = { 0x05, 0x05, 0x05};
+
 		if (csiphy_device->soc_info.index == 3) { // Wide sensor
 			addrs = wide_tunning_addr;
 			datas = wide_tunning_data;
@@ -677,7 +685,35 @@ static void cam_csiphy_cphy_overwrite_config(
 			if (ARRAY_SIZE(wide_tunning_data) < tunning_size)
 				tunning_size = ARRAY_SIZE(wide_tunning_data);
 		}
+
+		if (csiphy_device->soc_info.index == 2 &&
+			csiphy_device->csiphy_info[0].shooting_mode == CAM_SHOOTING_MODE_SUPER_SLOW_MOTION) { // ultra Wide sensor
+
+			addrs = ssm_tunning_addr;
+			datas = ssm_tunning_data;
+			tunning_size = ARRAY_SIZE(ssm_tunning_addr);
+			if (ARRAY_SIZE(ssm_tunning_data) < tunning_size)
+				tunning_size = ARRAY_SIZE(ssm_tunning_data);
+
+		}
 #endif
+
+#if defined(CONFIG_SEC_B2Q_PROJECT)
+		int wide_tunning_addr[] = { 0x98C, 0xA8C, 0xB8C,
+						0x9B4, 0xAB4, 0xBB4 };
+
+		int wide_tunning_data[] = { 0xA0, 0xA0, 0xA0,
+						0x0A, 0x0A, 0x0A };
+
+		if (csiphy_device->soc_info.index == 0) { // Wide sensor
+			addrs = wide_tunning_addr;
+			datas = wide_tunning_data;
+			tunning_size = ARRAY_SIZE(wide_tunning_addr);
+			if (ARRAY_SIZE(wide_tunning_data) < tunning_size)
+				tunning_size = ARRAY_SIZE(wide_tunning_data);
+		}
+#endif
+
 
 		for (i = 0; i < tunning_size; i++) {
 			CAM_INFO(CAM_CSIPHY, "Set CSIPHY register : [0x%x] 0x%x",

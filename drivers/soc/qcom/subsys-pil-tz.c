@@ -786,9 +786,7 @@ static void log_failure_reason(const struct pil_tz_data *d)
 #ifdef CONFIG_SENSORS_SSC
 	if (!strncmp(name, "slpi", 4)) {
 		ssr_reason_call_back(reason, min(size, (size_t)MAX_SSR_REASON_LEN));
-		if (strstr(reason, "IPLSREVOCER") 
-			|| (subsys_get_prev_fssr(d->subsys) 
-				&& strstr(reason, "APPS force stop")))
+		if (strstr(reason, "IPLSREVOCER"))
 			subsys_set_fssr(d->subsys, true);
 	}
 #endif

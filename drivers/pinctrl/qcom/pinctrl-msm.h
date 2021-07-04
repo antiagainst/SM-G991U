@@ -133,6 +133,8 @@ struct msm_gpio_wakeirq_map {
  * @pull_no_keeper: The SoC does not support keeper bias.
  * @wakeirq_map:    The map of wakeup capable GPIOs and the pin at PDC/MPM
  * @nwakeirq_map:   The number of entries in @hierarchy_map
+ * @wakeirq_map:    The list of non-wakeup capable GPIOs
+ * @nwakeirq_map:   The number of entries in non-wakeup capable gpios
  */
 struct msm_pinctrl_soc_data {
 	const struct pinctrl_pin_desc *pins;
@@ -148,6 +150,8 @@ struct msm_pinctrl_soc_data {
 	const int *reserved_gpios;
 	const struct msm_gpio_wakeirq_map *wakeirq_map;
 	unsigned int nwakeirq_map;
+	unsigned int *no_wake_gpios;
+	unsigned int n_no_wake_gpios;
 	struct pinctrl_qup *qup_regs;
 	unsigned int nqup_regs;
 };

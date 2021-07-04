@@ -2407,7 +2407,7 @@ static bool am_app_launch = false;
 #define GB_TO_PAGES(x) ((x) << (30 - PAGE_SHIFT))
 static unsigned long low_threshold;
 
-static inline bool is_too_low_file(struct pglist_data *pgdat)
+static inline bool is_too_low_file(void)
 {
 	unsigned long pgdatfile;
 	if (!low_threshold) {
@@ -2419,32 +2419,20 @@ static inline bool is_too_low_file(struct pglist_data *pgdat)
 			low_threshold = MB_TO_PAGES(200);
 	}
 
-	pgdatfile = node_page_state(pgdat, NR_ACTIVE_FILE) +
-		   node_page_state(pgdat, NR_INACTIVE_FILE);
+	pgdatfile = global_node_page_state(NR_ACTIVE_FILE) +
+		    global_node_page_state(NR_INACTIVE_FILE);
 	return pgdatfile < low_threshold;
 }
 
-static inline bool need_memory_boosting(struct pglist_data *pgdat)
+inline bool need_memory_boosting(void)
 {
-	bool ret;
-
 	if (time_after(jiffies, last_mode_change + MEM_BOOST_MAX_TIME))
 		mem_boost_mode = NO_BOOST;
-	else if (is_too_low_file(pgdat))
-		mem_boost_mode = NO_BOOST;
 
-	switch (mem_boost_mode) {
-	case BOOST_KILL:
-	case BOOST_HIGH:
-		ret = true;
-		break;
-	case BOOST_MID:
-	case NO_BOOST:
-	default:
-		ret = false;
-		break;
-	}
-	return ret;
+	if (mem_boost_mode >= BOOST_HIGH)
+		return true;
+	else
+		return false;
 }
 
 static ssize_t mem_boost_mode_show(struct kobject *kobj,
@@ -2649,7 +2637,8 @@ static void get_scan_count(struct lruvec *lruvec, struct mem_cgroup *memcg,
 		}
 	}
 
-	if (current_is_kswapd() && need_memory_boosting(pgdat)) {
+	if (current_is_kswapd() && need_memory_boosting() &&
+	    !is_too_low_file()) {
 		scan_balance = SCAN_FILE;
 		goto out;
 	}
@@ -2994,6 +2983,9 @@ static void shrink_node_memcg(struct pglist_data *pgdat, struct mem_cgroup *memc
 	}
 	blk_finish_plug(&plug);
 	sc->nr_reclaimed += nr_reclaimed;
+
+	if (need_memory_boosting())
+		return;
 
 	/*
 	 * Even if we did not try to evict anon pages at all, we want to

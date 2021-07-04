@@ -453,6 +453,51 @@ static int qseecom_query_ce_info(struct qseecom_dev_handle *data,
 static int __qseecom_unload_app(struct qseecom_dev_handle *data,
 				uint32_t app_id);
 
+#define CONFIG_HANDLE_LISTENER_EXIT
+#ifdef CONFIG_HANDLE_LISTENER_EXIT
+#include <linux/notifier.h>
+#include <linux/reboot.h>
+
+static void qseecom_handle_listener_exit(struct work_struct *unused)
+{
+	struct qseecom_registered_listener_list *ptr_svc = NULL;
+	int state = atomic_read(&qseecom.qseecom_state);
+
+	pr_warn("enter\n");
+
+	if (state != QSEECOM_STATE_READY) {
+		pr_warn("exit %d state\n", state);
+		return;
+	}
+
+	mutex_lock(&listener_access_lock);
+	list_for_each_entry(ptr_svc, &qseecom.registered_listener_list_head, list) {
+		/* stop CA thread waiting for listener response */
+		ptr_svc->abort = 1;
+		pr_warn("set abort flag for listener id %x\n", ptr_svc->svc.listener_id);
+	}
+	mutex_unlock(&listener_access_lock);
+	wake_up_interruptible_all(&qseecom.send_resp_wq);
+
+	pr_warn("exit\n");
+}
+
+static DECLARE_DELAYED_WORK(listener_exit_work, qseecom_handle_listener_exit);
+
+static int qseecom_reboot_notifier(struct notifier_block *nb,
+				unsigned long code, void *data)
+{
+	schedule_delayed_work(&listener_exit_work, 3 * HZ);
+	pr_warn("mark listener exit after timeout\n");
+
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block qseecom_reboot_nb = {
+	.notifier_call = qseecom_reboot_notifier,
+};
+#endif
+
 static int __maybe_unused get_qseecom_keymaster_status(char *str)
 {
 	get_option(&str, &qseecom.is_apps_region_protected);
@@ -9658,6 +9703,12 @@ static int qseecom_probe(struct platform_device *pdev)
 	if (rc)
 		goto exit_deinit_bus;
 
+#ifdef CONFIG_HANDLE_LISTENER_EXIT
+	rc = register_reboot_notifier(&qseecom_reboot_nb);
+	if (rc)
+		pr_err("failed to register reboot notifier(%d)\n", rc);
+#endif
+
 	atomic_set(&qseecom.qseecom_state, QSEECOM_STATE_READY);
 	return 0;
 
@@ -9683,6 +9734,11 @@ static int qseecom_remove(struct platform_device *pdev)
 	int ret = 0;
 
 	atomic_set(&qseecom.qseecom_state, QSEECOM_STATE_NOT_READY);
+
+#ifdef CONFIG_HANDLE_LISTENER_EXIT
+	cancel_delayed_work_sync(&listener_exit_work);
+#endif
+
 	spin_lock_irqsave(&qseecom.registered_kclient_list_lock, flags);
 
 	list_for_each_entry_safe(kclient, kclient_tmp,

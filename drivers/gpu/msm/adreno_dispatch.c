@@ -300,7 +300,7 @@ static void _retire_timestamp(struct kgsl_drawobj *drawobj)
 	info.timestamp = drawobj->timestamp;
 
 	msm_perf_events_update(MSM_PERF_GFX, MSM_PERF_RETIRED,
-				context->proc_priv->pid,
+				pid_nr(context->proc_priv->pid),
 				context->id, drawobj->timestamp);
 
 	/*
@@ -697,7 +697,7 @@ static int sendcmd(struct adreno_device *adreno_dev,
 	info.gmu_dispatch_queue = -1;
 
 	msm_perf_events_update(MSM_PERF_GFX, MSM_PERF_SUBMIT,
-			       context->proc_priv->pid,
+			       pid_nr(context->proc_priv->pid),
 			       context->id, drawobj->timestamp);
 
 	trace_adreno_cmdbatch_submitted(drawobj, &info,
@@ -1222,7 +1222,7 @@ static void _queue_drawobj(struct adreno_context *drawctxt,
 			ADRENO_CONTEXT_DRAWQUEUE_SIZE;
 	drawctxt->queued++;
 	msm_perf_events_update(MSM_PERF_GFX, MSM_PERF_QUEUE,
-				context->proc_priv->pid,
+				pid_nr(context->proc_priv->pid),
 				context->id, drawobj->timestamp);
 	trace_adreno_cmdbatch_queued(drawobj, drawctxt->queued);
 }
@@ -1347,6 +1347,7 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 	struct adreno_device *adreno_dev = ADRENO_DEVICE(device);
 	struct adreno_context *drawctxt = ADRENO_CONTEXT(context);
 	struct adreno_dispatcher_drawqueue *dispatch_q;
+	struct adreno_dispatch_job *job;
 	int ret;
 	unsigned int i, user_ts;
 
@@ -1364,11 +1365,18 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 	/* wait for the suspend gate */
 	wait_for_completion(&device->halt_gate);
 
+	job = kmem_cache_alloc(jobs_cache, GFP_KERNEL);
+	if (!job)
+		return -ENOMEM;
+
+	job->drawctxt = drawctxt;
+
 	spin_lock(&drawctxt->lock);
 
 	ret = _check_context_state_to_queue_cmds(drawctxt);
 	if (ret) {
 		spin_unlock(&drawctxt->lock);
+		kmem_cache_free(jobs_cache, job);
 		return ret;
 	}
 
@@ -1386,6 +1394,7 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 		 */
 		if (timestamp_cmp(drawctxt->timestamp, user_ts) >= 0) {
 			spin_unlock(&drawctxt->lock);
+			kmem_cache_free(jobs_cache, job);
 			return -ERANGE;
 		}
 	}
@@ -1396,8 +1405,10 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 		case MARKEROBJ_TYPE:
 			ret = drawctxt_queue_markerobj(adreno_dev, drawctxt,
 				drawobj[i], timestamp, user_ts);
-			if (ret)
+			if (ret) {
 				spin_unlock(&drawctxt->lock);
+				kmem_cache_free(jobs_cache, job);
+			}
 
 			if (ret == 1)
 				goto done;
@@ -1409,6 +1420,7 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 				drawobj[i], timestamp, user_ts);
 			if (ret) {
 				spin_unlock(&drawctxt->lock);
+				kmem_cache_free(jobs_cache, job);
 				return ret;
 			}
 			break;
@@ -1420,11 +1432,13 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 				drawctxt, drawobj[i], timestamp, user_ts);
 			if (ret) {
 				spin_unlock(&drawctxt->lock);
+				kmem_cache_free(jobs_cache, job);
 				return ret;
 			}
 			break;
 		default:
 			spin_unlock(&drawctxt->lock);
+			kmem_cache_free(jobs_cache, job);
 			return -EINVAL;
 		}
 
@@ -1437,9 +1451,14 @@ int adreno_dispatcher_queue_cmds(struct kgsl_device_private *dev_priv,
 	spin_unlock(&drawctxt->lock);
 
 	/* Add the context to the dispatcher pending list */
-	ret = dispatcher_queue_context(adreno_dev, drawctxt);
-	if (ret)
-		return ret;
+	if (_kgsl_context_get(&drawctxt->base)) {
+		trace_dispatch_queue_context(drawctxt);
+		llist_add(&job->node,
+			&adreno_dev->dispatcher.jobs[drawctxt->base.priority]);
+	} else {
+		kmem_cache_free(jobs_cache, job);
+		goto done;
+	}
 
 	/*
 	 * Only issue commands if inflight is less than burst -this prevents us
@@ -1646,7 +1665,7 @@ static inline const char *_kgsl_context_comm(struct kgsl_context *context)
 #define pr_fault(_d, _c, fmt, args...) \
 		dev_err((_d)->dev, "%s[%d]: " fmt, \
 		_kgsl_context_comm((_c)->context), \
-		(_c)->context->proc_priv->pid, ##args)
+		pid_nr((_c)->context->proc_priv->pid), ##args)
 
 
 static void adreno_fault_header(struct kgsl_device *device,
@@ -2324,7 +2343,7 @@ static void retire_cmdobj(struct adreno_device *adreno_dev,
 	info.eop = end;
 
 	msm_perf_events_update(MSM_PERF_GFX, MSM_PERF_RETIRED,
-			       context->proc_priv->pid,
+			       pid_nr(context->proc_priv->pid),
 			       context->id, drawobj->timestamp);
 
 	/*

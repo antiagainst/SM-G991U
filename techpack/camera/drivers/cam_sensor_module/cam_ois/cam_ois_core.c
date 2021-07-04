@@ -487,6 +487,9 @@ static int cam_ois_slaveInfo_pkt_parser(struct cam_ois_ctrl_t *o_ctrl,
 #if defined(CONFIG_SAMSUNG_OIS_MCU_STM32)
 	o_ctrl->gyro_raw_x = ois_info->gyro_raw_x;
 	o_ctrl->gyro_raw_y = ois_info->gyro_raw_y;
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+	o_ctrl->gyro_raw_z = ois_info->gyro_raw_z;
+#endif
 	o_ctrl->efs_cal    = ois_info->efs_cal;
 #endif
 

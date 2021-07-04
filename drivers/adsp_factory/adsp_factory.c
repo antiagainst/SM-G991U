@@ -554,6 +554,7 @@ static int __init factory_adsp_init(void)
 		data->ready_flag[i] = 0;
 
 	data->restrict_mode = false;
+	data->turn_over_crash = 0;
 	mutex_init(&data->accel_factory_mutex);
 	mutex_init(&data->prox_factory_mutex);
 	mutex_init(&data->light_factory_mutex);

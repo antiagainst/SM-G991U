@@ -1575,8 +1575,6 @@ static int ss_vrr_init(struct vrr_info *vrr)
 	vrr->delayed_perf_normal = false;
 	vrr->skip_vrr_in_brightness = false;
 
-	vrr->send_vrr_te_time = true;
-
 	vrr->vrr_workqueue = create_singlethread_workqueue("vrr_workqueue");
 	INIT_WORK(&vrr->vrr_work, ss_panel_vrr_switch_work);
 

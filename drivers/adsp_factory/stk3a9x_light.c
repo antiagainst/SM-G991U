@@ -29,10 +29,11 @@ enum {
 	OPTION_TYPE_GET_LIGHT_CAL,
 	OPTION_TYPE_SET_LIGHT_CAL,
 	OPTION_TYPE_SET_LCD_VERSION,
+	OPTION_TYPE_SET_UB_DISCONNECT,
 	OPTION_TYPE_MAX
 };
 
-#ifdef CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR
+#if defined(CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR) && defined(CONFIG_DISPLAY_SAMSUNG)
 #include "../../../techpack/display/msm/samsung/ss_panel_notify.h"
 #endif
 #ifdef CONFIG_SUPPORT_LIGHT_CALIBRATION
@@ -218,7 +219,7 @@ static ssize_t light_register_write_store(struct device *dev,
 	return size;
 }
 
-#ifdef CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR
+#if defined(CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR) && defined(CONFIG_DISPLAY_SAMSUNG)
 void light_brightness_work_func(struct work_struct *work)
 {
 	struct adsp_data *data = container_of((struct work_struct*)work,
@@ -236,10 +237,11 @@ void light_brightness_work_func(struct work_struct *work)
 	data->ready_flag[MSG_TYPE_SET_CAL_DATA] &= ~(1 << MSG_LIGHT);
 
 	if (cnt >= TIMEOUT_CNT)
-		pr_err("[SSC_FAC] %s: Timeout!!!\n", __func__);
+		pr_err("[SSC_FAC] %s: Timeout!!! br: %d\n", __func__,
+			data->brightness_info[0]);
 	else
-		pr_info("[SSC_FAC] %s: set br %d\n",
-			__func__, data->msg_buf[MSG_LIGHT][0]);
+		pr_info("[SSC_FAC] %s: set br: %d, lux: %d\n", __func__,
+			data->brightness_info[0], data->msg_buf[MSG_LIGHT][0]);
 
 	mutex_unlock(&data->light_factory_mutex);
 }
@@ -247,12 +249,12 @@ void light_brightness_work_func(struct work_struct *work)
 int light_panel_data_notify(struct notifier_block *nb,
 	unsigned long val, void *v)
 {
-	struct panel_bl_event_data *panel_data = v;
-	struct adsp_data *data;
-	int32_t brightness_data[2] = {0, };
+	struct adsp_data *data = adsp_get_struct_data();
 
 	if (val == PANEL_EVENT_BL_CHANGED) {
-		data = adsp_get_struct_data();
+		struct panel_bl_event_data *panel_data = v;
+		int32_t brightness_data[2] = {0, };
+
 		brightness_data[0] = panel_data->bl_level;
 		brightness_data[1] = panel_data->aor_data;
 		data->brightness_info[0] = brightness_data[0];
@@ -274,6 +276,18 @@ int light_panel_data_notify(struct notifier_block *nb,
 #endif
 		pr_info("[SSC_FAC] %s: %d, %d\n", __func__,
 			brightness_data[0], brightness_data[1]);
+	} else if (val == PANEL_EVENT_UB_CON_CHANGED) {
+		struct panel_ub_con_event_data *panel_data = v;
+		uint16_t light_idx = get_light_sidx(data);
+		int32_t msg_buf[2];
+
+		msg_buf[0] = OPTION_TYPE_SET_UB_DISCONNECT;
+		msg_buf[1] = (int32_t)panel_data->state;
+
+		pr_info("[SSC_FAC] %s: ub disconnected %d\n",
+			__func__, msg_buf[1]);
+		adsp_unicast(msg_buf, sizeof(msg_buf),
+			light_idx, 0, MSG_TYPE_OPTION_DEFINE);
 	}
 
 	return 0;
@@ -337,6 +351,13 @@ static ssize_t light_lcd_onoff_store(struct device *dev,
 	msg_buf[0] = OPTION_TYPE_LCD_ONOFF;
 	msg_buf[1] = new_value;
 
+	if (new_value == 1) {
+		schedule_delayed_work(&data->light_copr_debug_work,
+			msecs_to_jiffies(1000));
+		data->light_copr_debug_count = 0;
+	} else {
+		cancel_delayed_work_sync(&data->light_copr_debug_work);
+	}
 	mutex_lock(&data->light_factory_mutex);
 	adsp_unicast(msg_buf, sizeof(msg_buf),
 		light_idx, 0, MSG_TYPE_OPTION_DEFINE);
@@ -354,12 +375,8 @@ static ssize_t light_lcd_onoff_store(struct device *dev,
 static ssize_t light_circle_show(struct device *dev,
 	struct device_attribute *attr, char *buf)
 {
-#if defined(CONFIG_SEC_M1Q_PROJECT)
+#if defined(CONFIG_SEC_R9Q_PROJECT)
 	return snprintf(buf, PAGE_SIZE, "41.9 11.4 2.9\n");
-#elif defined(CONFIG_SEC_N2Q_PROJECT)
-	return snprintf(buf, PAGE_SIZE, "44.2 11.5 2.9\n");
-#elif defined(CONFIG_SEC_O3Q_PROJECT)
-	return snprintf(buf, PAGE_SIZE, "47.3 7.5 2.9\n");
 #else
 	return snprintf(buf, PAGE_SIZE, "0 0 0\n");
 #endif
@@ -559,6 +576,34 @@ static ssize_t light_boled_enable_store(struct device *dev,
 }
 #endif /* CONFIG_SUPPORT_DDI_COPR_FOR_LIGHT_SENSOR */
 
+#ifdef CONFIG_SUPPORT_SSC_AOD_RECT
+static ssize_t light_set_aod_rect_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
+{
+	int32_t msg_buf[5] = {OPTION_TYPE_SSC_AOD_RECT, 0, 0, 0, 0};
+
+	if (sscanf(buf, "%3d,%3d,%3d,%3d",
+		&msg_buf[1], &msg_buf[2], &msg_buf[3], &msg_buf[4]) != 4) {
+		pr_err("[SSC_FAC]: %s - The number of data are wrong\n",
+			__func__);
+		return -EINVAL;
+	}
+
+	pr_info("[SSC_FAC] %s: rect:%d,%d,%d,%d\n", __func__,
+		msg_buf[1], msg_buf[2], msg_buf[3], msg_buf[4]);
+	adsp_unicast(msg_buf, sizeof(msg_buf),
+			MSG_SSC_CORE, 0, MSG_TYPE_OPTION_DEFINE);
+	return size;
+}
+
+void light_rect_init_work(void)
+{
+	int32_t rect_msg[5] = {OPTION_TYPE_SSC_AOD_LIGHT_CIRCLE, 546, 170, 576, 200};
+	adsp_unicast(rect_msg, sizeof(rect_msg),
+		MSG_SSC_CORE, 0, MSG_TYPE_OPTION_DEFINE);
+}
+#endif
+
 #ifdef CONFIG_SUPPORT_LIGHT_CALIBRATION
 int light_get_cal_data(int32_t *cal_data)
 {
@@ -656,8 +701,10 @@ int light_load_ub_cell_id_from_file(char *path, char *data_str)
 	}
 
 	ret = vfs_read(file_filp, (char *)data_str,
-		sizeof(char) * LIGHT_UB_CELL_ID_INFO_STRING_LENGTH,
+		sizeof(char) * (LIGHT_UB_CELL_ID_INFO_STRING_LENGTH - 1),
 		&file_filp->f_pos);
+	data_str[LIGHT_UB_CELL_ID_INFO_STRING_LENGTH - 1] = '\0';
+
 	if (ret < 0)
 		pr_err("[SSC_FAC] %s: fd read fail(%s): %d\n",
 			__func__, path, ret);
@@ -712,6 +759,43 @@ int light_save_ub_cell_id_to_efs(char *data_str, bool first_booting)
 		LIGHT_UB_CELL_ID_PATH, data_str);
 
 	return ret;
+}
+
+void light_copr_debug_work_func(struct work_struct *work)
+{
+	struct adsp_data *data = container_of((struct delayed_work *)work,
+		struct adsp_data, light_copr_debug_work);
+	uint16_t light_idx = get_light_sidx(data);
+	uint8_t cnt = 0;
+
+	mutex_lock(&data->light_factory_mutex);
+	adsp_unicast(NULL, 0, light_idx, 0, MSG_TYPE_GET_DUMP_REGISTER);
+
+	while (!(data->ready_flag[MSG_TYPE_GET_DUMP_REGISTER] & 1 << light_idx)
+		&& cnt++ < TIMEOUT_CNT)
+		usleep_range(500, 550);
+
+	data->ready_flag[MSG_TYPE_GET_DUMP_REGISTER] &= ~(1 << light_idx);
+
+	if (cnt >= TIMEOUT_CNT) {
+		pr_err("[SSC_FAC] %s: Timeout!!!\n", __func__);
+		mutex_unlock(&data->light_factory_mutex);
+		return;
+	}
+
+	pr_info("[SSC_FAC] %s: %d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n", __func__,
+		data->msg_buf[light_idx][0], data->msg_buf[light_idx][1],
+		data->msg_buf[light_idx][2], data->msg_buf[light_idx][3],
+		data->msg_buf[light_idx][4], data->msg_buf[light_idx][5],
+		data->msg_buf[light_idx][6], data->msg_buf[light_idx][7],
+		data->msg_buf[light_idx][8], data->msg_buf[light_idx][9],
+		data->msg_buf[light_idx][10], data->msg_buf[light_idx][11]);
+
+	mutex_unlock(&data->light_factory_mutex);
+
+	if (data->light_copr_debug_count++ < 5)
+		schedule_delayed_work(&data->light_copr_debug_work,
+			msecs_to_jiffies(1000));
 }
 
 void light_cal_read_work_func(struct work_struct *work)
@@ -1028,6 +1112,9 @@ static DEVICE_ATTR(name, 0444, light_name_show, NULL);
 static DEVICE_ATTR(lux, 0444, light_raw_data_show, NULL);
 static DEVICE_ATTR(raw_data, 0444, light_raw_data_show, NULL);
 static DEVICE_ATTR(dhr_sensor_info, 0444, light_get_dhr_sensor_info_show, NULL);
+#ifdef CONFIG_SUPPORT_SSC_AOD_RECT
+static DEVICE_ATTR(set_aod_rect, 0220, NULL, light_set_aod_rect_store);
+#endif
 
 static struct device_attribute *light_attrs[] = {
 	&dev_attr_vendor,
@@ -1053,13 +1140,16 @@ static struct device_attribute *light_attrs[] = {
 	&dev_attr_light_cal,
 	&dev_attr_light_test,
 #endif
+#ifdef CONFIG_SUPPORT_SSC_AOD_RECT
+	&dev_attr_set_aod_rect,
+#endif
 	NULL,
 };
 
 static int __init stk3a9x_light_factory_init(void)
 {
 	adsp_factory_register(MSG_LIGHT, light_attrs);
-#ifdef CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR
+#if defined(CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR) && defined(CONFIG_DISPLAY_SAMSUNG)
 	ss_panel_notifier_register(&light_panel_data_notifier);
 #endif
 	pr_info("[SSC_FAC] %s\n", __func__);
@@ -1070,7 +1160,7 @@ static int __init stk3a9x_light_factory_init(void)
 static void __exit stk3a9x_light_factory_exit(void)
 {
 	adsp_factory_unregister(MSG_LIGHT);
-#ifdef CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR
+#if defined(CONFIG_SUPPORT_BRIGHTNESS_NOTIFY_FOR_LIGHT_SENSOR) && defined(CONFIG_DISPLAY_SAMSUNG)
 	ss_panel_notifier_unregister(&light_panel_data_notifier);
 #endif
 	pr_info("[SSC_FAC] %s\n", __func__);

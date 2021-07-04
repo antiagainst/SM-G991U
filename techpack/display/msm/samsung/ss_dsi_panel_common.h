@@ -359,6 +359,7 @@ enum ss_dsi_cmd_set_type {
 	TX_MTP_WRITE_SYSFS,
 	TX_TEMP_DSC,
 	TX_DISPLAY_ON,
+	TX_DISPLAY_ON_POST,
 	TX_FIRST_DISPLAY_ON,
 	TX_DISPLAY_OFF,
 	TX_BRIGHT_CTRL,
@@ -482,6 +483,8 @@ enum ss_dsi_cmd_set_type {
 	TX_IRC_SUBDIVISION,
 	TX_PAC_IRC_SUBDIVISION,
 	TX_IRC_OFF,
+	TX_SMOOTH_DIMMING_ON,
+	TX_SMOOTH_DIMMING_OFF,
 
 	TX_NORMAL_BRIGHTNESS_ETC,
 
@@ -662,8 +665,6 @@ enum ss_dsi_cmd_set_type {
 
 	TX_GM2_GAMMA_COMP,
 
-	TX_VRR_GM2_GAMMA_COMP_PRE1,
-	TX_VRR_GM2_GAMMA_COMP_PRE2,
 	TX_VRR_GM2_GAMMA_COMP,
 	TX_VRR_GM2_GAMMA_COMP2,
 
@@ -1297,6 +1298,10 @@ void S6E3HAB_AMB623TS01_WQHD_init(struct samsung_display_driver_data *vdd);
 void S6E3HAB_AMB677TY01_WQHD_init(struct samsung_display_driver_data *vdd);
 void S6E3HAD_AMB681XV01_WQHD_init(struct samsung_display_driver_data *vdd);
 void S6E8FC1_AMS660XR01_HD_init(struct samsung_display_driver_data *vdd);
+void HX83102_TV104WUM_WUXGA_init(struct samsung_display_driver_data *vdd);
+void HX83121_PPC357DB11_WQXGA_init(struct samsung_display_driver_data *vdd);
+void FT8203_TS124QDM_WQXGA_init(struct samsung_display_driver_data *vdd);
+void EA8082_AMB641ZR01_FHD_init(struct samsung_display_driver_data *vdd);
 void PBA_BOOTING_FHD_init(struct samsung_display_driver_data *vdd);
 
 struct panel_func {
@@ -1344,6 +1349,9 @@ struct panel_func {
 	struct smartdim_conf *(*samsung_smart_get_conf_hmt)(void);
 
 	/* TFT */
+	int (*samsung_buck_control)(struct samsung_display_driver_data *vdd);
+	int (*samsung_blic_control)(struct samsung_display_driver_data *vdd);
+	int (*samsung_boost_control)(struct samsung_display_driver_data *vdd);
 	void (*samsung_tft_blic_init)(struct samsung_display_driver_data *vdd);
 	void (*samsung_brightness_tft_pwm)(struct samsung_display_driver_data *vdd, int level);
 	struct dsi_panel_cmd_set * (*samsung_brightness_tft_pwm_ldi)(struct samsung_display_driver_data *vdd, int *level_key);
@@ -1416,8 +1424,8 @@ struct panel_func {
 		struct brightness_table *br_tbl,
 		struct ss_interpolation_brightness_table *normal_table, int normal_table_size);
 	int (*get_gamma_V_size)(void);
-	void (*convert_GAMMA_to_V)(unsigned char* src, unsigned int *dst);
-	void (*convert_V_to_GAMMA)(unsigned int * src, unsigned char *dst);
+	void (*convert_GAMMA_to_V)(unsigned char *src, unsigned int *dst);
+	void (*convert_V_to_GAMMA)(unsigned int *src, unsigned char *dst);
 
 	int (*samsung_vrr_set_te_mod)(struct samsung_display_driver_data *vdd, int cur_rr, int cur_hs);
 	int (*samsung_lfd_get_base_val)(struct vrr_info *vrr,
@@ -1617,7 +1625,6 @@ struct ss_brightness_info {
 
 	int smart_dimming_loaded_dsi;
 	int smart_dimming_hmt_loaded_dsi;
-	bool gamma_comp_needs_self_grid;
 };
 
 enum SS_BRR_MODE {
@@ -1853,7 +1860,7 @@ struct vrr_info {
 	int prev_refresh_rate;
 	bool prev_sot_hs_mode;
 	bool prev_phs_mode;
-	
+
 	/* Some displays, like hubble HAB and c2 HAC, cannot support 120hz in WQHD.
 	 * In this case, it should guarantee below sequence to prevent WQHD@120hz mode,
 	 * in case of WQHD@60hz -> FHD/HD@120hz.
@@ -1914,9 +1921,6 @@ struct vrr_info {
 	int te_mod_on;
 	int te_mod_divider;
 	int te_mod_cnt;
-
-	/* send vrr cmd at TE timing */
-	bool send_vrr_te_time;
 
 	enum VRR_GM2_GAMMA gm2_gamma;
 };
@@ -2020,6 +2024,9 @@ struct samsung_display_driver_data {
 	/* Sleep_out cmd time check */
 	ktime_t sleep_out_time;
 	ktime_t tx_set_on_time;
+
+	/* Some panel read operation should be called after on-command. */
+	bool skip_read_on_pre;
 
 	/* Support Global Para */
 	bool gpara;
@@ -2229,6 +2236,25 @@ struct samsung_display_driver_data {
 	*/
 	bool aot_enable;
 
+	/* AOT support : tddi video panel (Himax)
+	 * Make reset from gpio to regulator
+	 * to control it with touch module
+	 * reset regulator name will be "panel_reset"
+	 * (Power on - reset)
+	 */
+	bool aot_reset_regulator;
+
+	/* To call reset seq later then LP11
+	 * (Power on - LP11 - Reset)
+	 * Only position change of aot_reset_regulator.
+	 * Should not be with panel->lp11_init
+	 */
+	bool aot_reset_regulator_late;
+
+	/* Some TDDI (Himax) panel can get esd noti from touch driver */
+	bool esd_touch_notify;
+	struct notifier_block nb_esd_touch;
+
 	int check_fw_id; 	/* save ddi_fw id (revision)*/
 	bool is_recovery_mode;
 
@@ -2253,6 +2279,8 @@ struct samsung_display_driver_data {
 
 	/* Video mode vblank_irq time for fp hbm sync */
 	ktime_t vblank_irq_time;
+	struct wait_queue_head ss_vync_wq;
+	atomic_t ss_vsync_cnt;
 
 	/* flag to support reading module id at probe timing */
 	bool support_early_id_read;
@@ -2392,6 +2420,8 @@ bool is_hbm_level(struct samsung_display_driver_data *vdd);
 
 /* SAMSUNG_FINGERPRINT */
 void ss_send_hbm_fingermask_image_tx(struct samsung_display_driver_data *vdd, bool on);
+void ss_wait_for_vsync(struct samsung_display_driver_data *vdd,
+		int num_of_vsnc, int delay_after_vsync);
 
 /* HMT BRIGHTNESS */
 int ss_brightness_dcs_hmt(struct samsung_display_driver_data *vdd, int level);

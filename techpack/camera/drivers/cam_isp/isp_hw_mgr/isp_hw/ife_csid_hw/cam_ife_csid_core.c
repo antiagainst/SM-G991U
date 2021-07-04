@@ -4795,6 +4795,9 @@ irqreturn_t cam_ife_csid_irq(int irq_num, void *data)
 	uint32_t *hw_cam_position = NULL;
 	uint32_t hwb_mipi_err = FALSE;
 #endif
+#if defined(CONFIG_SEC_ABC)
+	bool abc_err_report = false;
+#endif
 
 	csid_hw = (struct cam_ife_csid_hw *)data;
 
@@ -5434,6 +5437,7 @@ handle_fatal_error:
 #if defined(CONFIG_USE_CAMERA_HW_BIG_DATA)
 	if (hwb_mipi_err == TRUE) {
 		msm_is_sec_get_sensor_position(&hw_cam_position);
+		abc_err_report = TRUE;
 		if (hw_cam_position != NULL) {
 			switch (*hw_cam_position) {
 				case CAMERA_0:
@@ -5608,6 +5612,11 @@ handle_fatal_error:
 			}
 		}
 	}
+#endif
+
+#if defined(CONFIG_SEC_ABC)
+	if (abc_err_report)
+		sec_abc_send_event("MODULE=camera@INFO=camera_error");
 #endif
 
 	CAM_DBG(CAM_ISP, "IRQ Handling exit");

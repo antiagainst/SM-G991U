@@ -78,7 +78,8 @@ enum sec_debug_upload_cause_t {
 	UPLOAD_CAUSE_QUEST_DDR_TEST_SMD,
 	UPLOAD_CAUSE_SOD_RESULT,
 	UPLOAD_CAUSE_QUEST_ZIP_UNZIP,
-	UPLOAD_CAUSE_QUEST_END = UPLOAD_CAUSE_QUEST_ZIP_UNZIP,
+	UPLOAD_CAUSE_QUEST_AOSSTHERMALDIFF,
+	UPLOAD_CAUSE_QUEST_END = UPLOAD_CAUSE_QUEST_AOSSTHERMALDIFF,
 /* --Quest : 0xC8_5153_xx -- */
 /* -- KP : 0xC8xx_xxxx -- */
 /* ++ TP ++ */
@@ -118,6 +119,7 @@ enum sec_restart_reason_t {
 	RESTART_REASON_DMVERITY_ENFORCE = 0x77665509,
 	RESTART_REASON_KEYS_CLEAR = 0x7766550a,
 	RESTART_REASON_SEC_DEBUG_MODE = 0x776655ee,
+	RESTART_REASON_RECOVERY_UPDATE = 0x776655cc,
 	RESTART_REASON_END = 0xffffffff,
 };
 
@@ -270,6 +272,8 @@ enum pon_restart_reason {
 	PON_RESTART_REASON_QUEST_QUEFI_USER_START = 0x51,
 	PON_RESTART_REASON_QUEST_SUEFI_USER_START = 0x52,
 #endif
+ 	PON_RESTART_REASON_RECOVERY_UPDATE = 0x60, 
+ 	PON_RESTART_REASON_BOTA_COMPLETE = 0x61, 
 	PON_RESTART_REASON_MAX			= 0x80
 #endif
 };
@@ -382,4 +386,7 @@ extern void sec_debug_check_pwdt(void);
 static inline void sec_debug_check_pwdt(void) {}
 #endif
 
+#ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
+extern unsigned long sec_delay_check;
+#endif
 #endif	/* __INDIRECT__SEC_DEBUG_H__ */

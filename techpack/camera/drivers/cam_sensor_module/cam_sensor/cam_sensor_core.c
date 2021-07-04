@@ -73,6 +73,8 @@ int32_t cam_check_stream_on(
 		case SENSOR_ID_S5K3J1:
 		case SENSOR_ID_S5KGH1:
 		case SENSOR_ID_S5KHM3:
+		case SENSOR_ID_IMX258:
+		case FRONT_SENSOR_ID_IMX471:
 			ret = 1;
  			break;
 		default:
@@ -112,7 +114,7 @@ int cam_sensor_apply_adaptive_mipi_settings(struct cam_sensor_ctrl_t *s_ctrl)
 	if (cam_check_stream_on(s_ctrl)
 		&& s_ctrl->mipi_clock_index_new != INVALID_MIPI_INDEX
 		&& s_ctrl->i2c_data.streamon_settings.is_settings_valid) {
-		CAM_DBG(CAM_SENSOR, "[AM_DBG] Write MIPI setting before Stream On setting. mipi_index : %d",
+		CAM_DBG(CAM_SENSOR, "[CAM_DBG] Write MIPI setting before Stream On setting. mipi_index : %d",
 			s_ctrl->mipi_clock_index_new);
 
  		cur_mipi_sensor_mode = &(s_ctrl->mipi_info[0]);
@@ -122,7 +124,7 @@ int cam_sensor_apply_adaptive_mipi_settings(struct cam_sensor_ctrl_t *s_ctrl)
 			cur_mipi_sensor_mode->mipi_setting[s_ctrl->mipi_clock_index_new].clk_setting,
 			sizeof(struct cam_sensor_i2c_reg_setting));
 
-		CAM_INFO(CAM_SENSOR, "[AM_DBG] Picked MIPI clock : %s",
+		CAM_INFO(CAM_SENSOR, "[CAM_DBG] Picked MIPI clock : %s",
 			cur_mipi_sensor_mode->mipi_setting[s_ctrl->mipi_clock_index_new].str_mipi_clk);
 
 		if (mipi_i2c_list.i2c_settings.size > 0)
@@ -141,6 +143,8 @@ int cam_sensor_read_frame_count(
 {
 	int rc = 0;
 	uint32_t FRAME_COUNT_REG_ADDR = 0x0005;
+	if (s_ctrl->sensordata->slave_info.sensor_id == HI847_SENSOR_ID)
+		FRAME_COUNT_REG_ADDR = 0x0732;
 
 	rc = camera_io_dev_read(&s_ctrl->io_master_info, FRAME_COUNT_REG_ADDR,
 		frame_cnt, CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE);
@@ -163,7 +167,13 @@ int cam_sensor_wait_stream_on(
 		rc = cam_sensor_read_frame_count(s_ctrl, &frame_cnt);
 		if (rc < 0)
 			break;
-		if ((frame_cnt != 0xFF) &&	(frame_cnt > 0)) {
+
+		if ((s_ctrl->sensordata->slave_info.sensor_id == HI847_SENSOR_ID) && ((frame_cnt & 0x01)  == 0x01)) {
+			usleep_range(4000, 5000);
+			CAM_INFO(CAM_SENSOR, "[CNT_DBG] 0x%x : Last frame_cnt 0x%x",
+				s_ctrl->sensordata->slave_info.sensor_id, frame_cnt);
+			return 0;
+		} else if ((frame_cnt != 0xFF) &&	(frame_cnt > 0)) {
 			CAM_INFO(CAM_SENSOR, "[CNT_DBG] 0x%x : Last frame_cnt 0x%x",
 				s_ctrl->sensordata->slave_info.sensor_id, frame_cnt);
 			return 0;
@@ -194,8 +204,14 @@ int cam_sensor_wait_stream_off(
 		rc = cam_sensor_read_frame_count(s_ctrl, &frame_cnt);
 		if (rc < 0)
 			break;
-		if (frame_cnt == 0xFF)
+
+		if ((s_ctrl->sensordata->slave_info.sensor_id == HI847_SENSOR_ID) && ((frame_cnt & 0x01)  == 0x00)) {
+			usleep_range(1000, 1010);
 			return 0;
+		} else if (frame_cnt == 0xFF)
+			return 0;
+
+
 		CAM_INFO(CAM_SENSOR, "[CNT_DBG] retry cnt : %d, Stream off, frame_cnt : 0x%x", retry_cnt, frame_cnt);
 		retry_cnt--;
 		usleep_range(5000, 6000);
@@ -642,7 +658,7 @@ static int32_t cam_sensor_i2c_pkt_parse(struct cam_sensor_ctrl_t *s_ctrl,
 
 	case CAM_SENSOR_PACKET_OPCODE_SENSOR_MODE: {
 #if defined(CONFIG_CAMERA_ADAPTIVE_MIPI)
-		CAM_DBG(CAM_SENSOR, "[AM_DBG] SENSOR_MODE : %d", csl_packet->header.request_id);
+		CAM_DBG(CAM_SENSOR, "[CAM_DBG] SENSOR_MODE : %d", csl_packet->header.request_id);
 		s_ctrl->sensor_mode = csl_packet->header.request_id;
 #endif
 		break;
@@ -1322,8 +1338,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		//		Any sensor tried to probe first will be probed.
 		// Case 2. Match id fail(rc == -ENODEV)
 		//		probe fail and try other sensor
-		if ((rc == -ENODEV) &&
-			(s_ctrl->soc_info.index == SEC_WIDE_SENSOR))
+		if (((rc == -ENODEV) || (rc == -ENOTCONN)) &&
+			((s_ctrl->soc_info.index == SEC_WIDE_SENSOR) ||
+			(s_ctrl->soc_info.index == SEC_TELE_SENSOR)))
 		{
 			cam_sensor_power_down(s_ctrl);
 			msleep(20);
@@ -1628,6 +1645,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			if (rc < 0) {
 				CAM_ERR(CAM_SENSOR,
 					"cannot apply streamon settings");
+#if defined(CONFIG_SEC_ABC)
+                sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
 				goto release_mutex;
 			}
 		}
@@ -1658,6 +1678,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			if (rc < 0) {
 				CAM_ERR(CAM_SENSOR,
 				"cannot apply streamoff settings");
+#if defined(CONFIG_SEC_ABC)
+                sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
 			}
 		}
 
@@ -1701,6 +1724,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 				CAM_ERR(CAM_SENSOR,
 					"cannot apply init settings rc= %d",
 					rc);
+#if defined(CONFIG_SEC_ABC)
+                sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
 				delete_request(&s_ctrl->i2c_data.init_settings);
 				goto release_mutex;
 			}
@@ -1722,6 +1748,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			if (rc < 0) {
 				CAM_ERR(CAM_SENSOR,
 					"cannot apply config settings");
+#if defined(CONFIG_SEC_ABC)
+                sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
 				delete_request(
 					&s_ctrl->i2c_data.config_settings);
 				goto release_mutex;
@@ -1741,6 +1770,9 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 				&s_ctrl->io_master_info);
 			if (rc < 0) {
 				CAM_ERR(CAM_SENSOR, "cannot read data: %d", rc);
+#if defined(CONFIG_SEC_ABC)
+                sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
 				delete_request(&s_ctrl->i2c_data.read_settings);
 				goto release_mutex;
 			}
@@ -2287,8 +2319,8 @@ int cam_sensor_apply_settings(struct cam_sensor_ctrl_t *s_ctrl,
 					i2c_list);
 				if (rc < 0) {
 					CAM_ERR(CAM_SENSOR,
-						"Failed to apply settings: %d",
-						rc);
+						"Failed to apply settings: %d Sensor=0x%x",
+						rc, s_ctrl->sensordata->slave_info.sensor_id);
 					return rc;
 				}
 			}
@@ -2313,8 +2345,8 @@ int cam_sensor_apply_settings(struct cam_sensor_ctrl_t *s_ctrl,
 					i2c_list);
 				if (rc < 0) {
 					CAM_ERR(CAM_SENSOR,
-						"Failed to apply settings: %d",
-						rc);
+						"Failed to apply settings: %d Sensor=0x%x",
+						rc, s_ctrl->sensordata->slave_info.sensor_id);
 					return rc;
 				}
 			}

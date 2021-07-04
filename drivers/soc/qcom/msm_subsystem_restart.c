@@ -1136,7 +1136,6 @@ int subsystem_restart_dev(struct subsys_device *dev)
 	    !strncmp(name, "slpi", 4)) {
 		if (dev->desc->run_fssr) {
 			dev->restart_level = RESET_SUBSYS_COUPLED;
-			dev->desc->run_fssr_prev = dev->desc->run_fssr;
 			dev->desc->run_fssr = false;
 		}
 	}
@@ -1284,12 +1283,6 @@ void subsys_set_fssr(struct subsys_device *dev, bool value)
 	dev->desc->run_fssr = value;
 }
 EXPORT_SYMBOL(subsys_set_fssr);
-
-bool subsys_get_prev_fssr(struct subsys_device *dev)
-{
-	return dev->desc->run_fssr_prev;
-}
-EXPORT_SYMBOL(subsys_get_prev_fssr);
 
 void subsys_set_modem_silent_ssr(bool value)
 {

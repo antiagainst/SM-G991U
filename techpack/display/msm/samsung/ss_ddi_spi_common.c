@@ -602,7 +602,7 @@ int ss_spi_init(struct samsung_display_driver_data *vdd)
 
 	LCD_ERR("%s : ++ %s\n", __func__, drivername);
 
-	vdd->spi_driver.driver.name = drivername;
+	vdd->spi_driver.driver.name = kstrdup(drivername, GFP_KERNEL);
 	vdd->spi_driver.driver.owner = THIS_MODULE;
 	vdd->spi_driver.driver.of_match_table = ddi_spi_match_table;
 	vdd->spi_driver.driver.pm = &ddi_spi_pm_ops;

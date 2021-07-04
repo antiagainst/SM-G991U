@@ -527,6 +527,12 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 		return -EINVAL;
 	vdd = panel->panel_private;
 
+	if (!ss_panel_attach_get(panel->panel_private)) {
+   		LCD_INFO("PBA booting, skip to disable panel\n");
+		dump_stack();
+		return 0;
+   	}
+
 	/* ss_get_cmds() gets proper QCT cmds or SS cmds for panel revision. */
 	set = ss_get_cmds(vdd, type);
 

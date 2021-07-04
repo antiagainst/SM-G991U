@@ -501,7 +501,6 @@ static ssize_t state_synced_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(state_synced);
 
-int s2mpb02_reg_probe;
 static int really_probe(struct device *dev, struct device_driver *drv)
 {
 	int ret = -EPROBE_DEFER;
@@ -527,10 +526,6 @@ static int really_probe(struct device *dev, struct device_driver *drv)
 		return ret;
 
 	atomic_inc(&probe_count);
-	if (s2mpb02_reg_probe == 0 &&
-		!strncmp(drv->name, "s2mpb02-regulator", 17)) {
-		s2mpb02_reg_probe = 1;
-	}
 
 	pr_debug("bus: '%s': %s: probing driver %s with device %s\n",
 		 drv->bus->name, __func__, drv->name, dev_name(dev));

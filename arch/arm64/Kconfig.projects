@@ -15,3 +15,4 @@ config MACH_O1Q_USA_OPENW
 	bool "Samsung O1Q USA OPENW"
 	help
 	  Support for Samsung O1Q USA OPENW device.
+

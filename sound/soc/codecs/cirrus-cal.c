@@ -602,6 +602,51 @@ skip_vimon_cal:
 }
 EXPORT_SYMBOL_GPL(cirrus_cal_apply);
 
+int cirrus_cal_read_temp(const char *mfd_suffix)
+{
+	struct cirrus_amp *amp;
+	int reg = 0, ret;
+	unsigned int halo_state;
+	unsigned int global_en;
+
+	amp = cirrus_get_amp_from_suffix(mfd_suffix);
+
+	if (!amp)
+		goto err;
+
+	regmap_read(amp->regmap, amp->global_en, &global_en);
+
+	if ((global_en & amp->global_en_mask) == 0)
+		goto err;
+
+	regmap_read(amp->regmap, amp->mbox_sts, &halo_state);
+
+	if (halo_state != CSPL_MBOX_STS_RUNNING)
+		goto err;
+
+	if (amp_group->cal_running)
+		goto err;
+
+	ret = cirrus_cal_logger_get_variable(amp,
+			CIRRUS_CAL_RTLOG_ID_TEMP,
+			&reg);
+	if (ret == 0) {
+		if (reg == 0)
+			cirrus_cal_logger_get_variable(amp,
+				CIRRUS_CAL_RTLOG_ID_TEMP,
+				&reg);
+		dev_info(amp_group->cal_dev,
+			"Read temp: %d.%04d degrees C\n",
+			reg >> CIRRUS_CAL_RTLOG_RADIX_TEMP,
+			(reg & (((1 << CIRRUS_CAL_RTLOG_RADIX_TEMP) - 1))) *
+			10000 / (1 << CIRRUS_CAL_RTLOG_RADIX_TEMP));
+		return (reg >> CIRRUS_CAL_RTLOG_RADIX_TEMP);
+	}
+err:
+	return -1;
+}
+EXPORT_SYMBOL_GPL(cirrus_cal_read_temp);
+
 static int cirrus_cal_start(void)
 {
 	int redc_cal_start_retries, vimon_cal_retries = 0;
@@ -1046,6 +1091,14 @@ static ssize_t cirrus_cal_rdc_store(struct device *dev,
 
 	ret = kstrtos32(buf, 10, &rdc);
 	if (ret == 0 && amp) {
+		if (rdc < 0) {
+			amp->cal.efs_cache_vsc = 0;
+			amp->cal.efs_cache_isc = 0;
+			amp->cal.efs_cache_rdc = 0;
+			amp->cal.efs_cache_valid = 0;
+			return size;
+		}
+
 		amp->cal.efs_cache_rdc = rdc;
 
 		dev_info(dev, "EFS Cache RDC set: 0x%x\n", rdc);
@@ -1082,6 +1135,14 @@ static ssize_t cirrus_cal_vsc_store(struct device *dev,
 
 	ret = kstrtos32(buf, 10, &vsc);
 	if (ret == 0 && amp) {
+		if (vsc < 0) {
+			amp->cal.efs_cache_vsc = 0;
+			amp->cal.efs_cache_isc = 0;
+			amp->cal.efs_cache_rdc = 0;
+			amp->cal.efs_cache_valid = 0;
+			return size;
+		}
+
 		amp->cal.efs_cache_vsc = vsc;
 
 		dev_info(dev, "EFS Cache VSC set: 0x%x\n", vsc);
@@ -1118,6 +1179,14 @@ static ssize_t cirrus_cal_isc_store(struct device *dev,
 
 	ret = kstrtos32(buf, 10, &isc);
 	if (ret == 0 && amp) {
+		if (isc < 0) {
+			amp->cal.efs_cache_vsc = 0;
+			amp->cal.efs_cache_isc = 0;
+			amp->cal.efs_cache_rdc = 0;
+			amp->cal.efs_cache_valid = 0;
+			return size;
+		}
+
 		amp->cal.efs_cache_isc = isc;
 
 		dev_info(dev, "EFS Cache ISC set: 0x%x\n", isc);

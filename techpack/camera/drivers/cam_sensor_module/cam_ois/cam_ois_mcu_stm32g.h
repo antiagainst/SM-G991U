@@ -27,6 +27,16 @@
 #define RUMBA_WRITE_UILD	(0x48)
 #define RUMBA_READ_UILD 	(0x49)
 
+#define AKM_W_X_WRITE_UCLD	(0x1C)
+#define AKM_W_X_READ_UCLD 	(0x1D)
+#define AKM_W_Y_WRITE_UCLD	(0x9C)
+#define AKM_W_Y_READ_UCLD 	(0x9D)
+#define AKM_T_X_WRITE_UCLD	(0xE8)
+#define AKM_T_X_READ_UCLD 	(0xE9)
+#define AKM_T_Y_WRITE_UCLD	(0x68)
+#define AKM_T_Y_READ_UCLD 	(0x69)
+#define HALL_CAL_COUNT		(8)
+
 #define CAMERA_OIS_EXT_CLK_12MHZ 0xB71B00
 #define CAMERA_OIS_EXT_CLK_17MHZ 0x1036640
 #define CAMERA_OIS_EXT_CLK_19P2MHZ 0x124F800
@@ -41,12 +51,21 @@ struct cam_ois_sinewave_t
     int sin_y;
 };
 
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+int cam_ois_offset_test(struct cam_ois_ctrl_t *o_ctrl,
+	long *raw_data_x, long *raw_data_y, long *raw_data_z, bool is_need_cal);
+int cam_ois_parsing_raw_data(struct cam_ois_ctrl_t *o_ctrl,
+	uint8_t *buf, uint32_t buf_size, long *raw_data_x, long *raw_data_y, long *raw_data_z);
+int cam_ois_gyro_sensor_calibration(struct cam_ois_ctrl_t *o_ctrl,
+	long *raw_data_x, long *raw_data_y,long *raw_data_z);
+#else
 int cam_ois_offset_test(struct cam_ois_ctrl_t *o_ctrl,
 	long *raw_data_x, long *raw_data_y, bool is_need_cal);
 int cam_ois_parsing_raw_data(struct cam_ois_ctrl_t *o_ctrl,
 	uint8_t *buf, uint32_t buf_size, long *raw_data_x, long *raw_data_y);
 int cam_ois_gyro_sensor_calibration(struct cam_ois_ctrl_t *o_ctrl,
 	long *raw_data_x, long *raw_data_y);
+#endif
 uint32_t cam_ois_self_test(struct cam_ois_ctrl_t *o_ctrl);
 bool cam_ois_sine_wavecheck(struct cam_ois_ctrl_t *o_ctrl, int threshold,
 	char* buf, uint32_t module_mask);
@@ -81,8 +100,11 @@ int cam_ois_add_tamode_msg(struct cam_ois_ctrl_t *o_ctrl);
 int cam_ois_set_ta_mode(struct cam_ois_ctrl_t *o_ctrl);
 #endif
 int cam_ois_check_tele_cross_talk(struct cam_ois_ctrl_t *o_ctrl, uint16_t *result);
+int cam_ois_check_ois_valid_show(struct cam_ois_ctrl_t *o_ctrl, uint16_t *result);
 uint32_t cam_ois_check_ext_clk(struct cam_ois_ctrl_t *o_ctrl);
 int32_t cam_ois_set_ext_clk(struct cam_ois_ctrl_t *o_ctrl, uint32_t clk);
+
+int cam_ois_read_hall_cal(struct cam_ois_ctrl_t *o_ctrl, uint16_t subdev_id, uint16_t *result);
 
 #define OISCTRL				(0x0000) // OIS Control Register
 #define OISSTS				(0x0001) // OIS Status Register
@@ -164,6 +186,7 @@ int32_t cam_ois_set_ext_clk(struct cam_ois_ctrl_t *o_ctrl, uint32_t clk);
 #define GYRO_ORIENT			(0x0242) // Gyro Cal. running time
 #define XGZERO				(0x0248) // X axis Gyro 0 Point Offset Setting Register
 #define YGZERO				(0x024A) // Y axis Gyro 0 Point Offset Setting Register
+#define ZGZERO				(0x024C) // Z axis Gyro 0 Point Offset Setting Register
 #define XGG_M1				(0x0254) // X axis Gyro Gain Coefficient Setting Module#1 Register
 #define YGG_M1				(0x0258) // Y axis Gyro Gain Coefficient Setting Module#1 Register
 #define COCTRL				(0x0440) // Dual Cal. Center Offset Enable

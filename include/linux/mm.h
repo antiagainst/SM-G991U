@@ -3068,7 +3068,7 @@ extern atomic_t kzerod_zero_page_alloc_total;
 extern atomic_t kzerod_zero_page_alloc_prezero;
 #endif
 
-extern inline bool need_memory_boosting(struct pglist_data *pgdat);
+extern inline bool need_memory_boosting(void);
 
 extern int memcmp_pages(struct page *page1, struct page *page2);
 

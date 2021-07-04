@@ -13,6 +13,9 @@
 #if IS_REACHABLE(CONFIG_LEDS_S2MPB02)
 #include <linux/leds-s2mpb02.h>
 #endif
+#if defined(CONFIG_LEDS_KTD2692)
+#include <linux/leds-ktd2692.h>
+#endif
 
 static uint default_on_timer = 2;
 module_param(default_on_timer, uint, 0644);
@@ -483,6 +486,90 @@ static int cam_flash_torch(
 
 	return rc;
 }
+#elif defined(CONFIG_LEDS_KTD2692)
+int cam_flash_off(struct cam_flash_ctrl *flash_ctrl)
+{
+	if (!flash_ctrl) {
+		CAM_ERR(CAM_FLASH, "Flash control Null");
+		return -EINVAL;
+	}
+
+	CAM_INFO(CAM_FLASH, "CAM Flash OFF");
+	ktd2692_led_mode_ctrl(KTD2692_DISABLES_TORCH_FLASH_MODE, 0);
+
+	flash_ctrl->flash_state = CAM_FLASH_STATE_START;
+	return 0;
+}
+
+static int cam_flash_low(
+	struct cam_flash_ctrl *flash_ctrl,
+	struct cam_flash_frame_setting *flash_data)
+{
+	int rc = 0;
+
+	if (!flash_data) {
+		CAM_ERR(CAM_FLASH, "Flash Data Null");
+		return -EINVAL;
+	}
+
+	CAM_INFO(CAM_FLASH, "CAM Low Flash ON");
+	rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 200);
+	if (rc)
+		CAM_ERR(CAM_FLASH, "Fire Low Flash failed: %d", rc);
+
+	return rc;
+}
+
+static int cam_flash_high(
+	struct cam_flash_ctrl *flash_ctrl,
+	struct cam_flash_frame_setting *flash_data)
+{
+	int rc = 0;
+
+	if (flash_data->led_current_ma[0] == 100) {
+		rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 125);
+	}
+	else if (flash_data->led_current_ma[0] == 240) {
+		rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 225);
+	}
+	else {
+		rc = ktd2692_led_mode_ctrl(KTD2692_ENABLE_FLASH_MODE, 1400);
+	}
+
+	CAM_INFO(CAM_FLASH, "CAM Flash ON, current = %d",flash_data->led_current_ma[0]);
+	if (rc)
+		CAM_ERR(CAM_FLASH, "Fire Flash Failed: %d", rc);
+
+	return rc;
+}
+
+static int cam_flash_torch(
+	struct cam_flash_ctrl *flash_ctrl,
+	struct cam_flash_frame_setting *flash_data)
+{
+	int rc = 0;
+
+	if (!flash_data) {
+		CAM_ERR(CAM_FLASH, "Flash Data Null");
+		return -EINVAL;
+	}
+
+	CAM_INFO(CAM_FLASH, "CAM Torch Flash ON, %d mA", flash_data->led_current_ma[0]);
+#if defined(CONFIG_FLASH_CURRENT_JAPAN)
+		rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 50);
+#else
+	if (flash_data->led_current_ma[0] == 140) {
+		rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 100);
+	} else {
+		rc =  ktd2692_led_mode_ctrl(KTD2692_ENABLE_TORCH_MODE, 175);
+	}
+#endif
+
+	if (rc)
+		CAM_ERR(CAM_FLASH, "Fire Torch failed: %d", rc);
+
+	return rc;
+}
 #else
 static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 	struct cam_flash_frame_setting *flash_data, enum camera_flash_opcode op)
@@ -911,7 +998,7 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 					return rc;
 				}
 			}
-#if IS_REACHABLE(CONFIG_LEDS_S2MPB02) || defined(CONFIG_LEDS_RT8547)
+#if IS_REACHABLE(CONFIG_LEDS_S2MPB02) || defined(CONFIG_LEDS_RT8547) || defined(CONFIG_LEDS_KTD2692)
 			if (flash_data->opcode ==
 				CAMERA_SENSOR_FLASH_OP_FIRETORCH) {
 				rc = cam_flash_torch(fctrl, flash_data);
@@ -947,7 +1034,7 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 					"LED off failed: %d",
 					rc);
 			}
-#if IS_REACHABLE(CONFIG_LEDS_S2MPB02) || defined(CONFIG_LEDS_RT8547)
+#if IS_REACHABLE(CONFIG_LEDS_S2MPB02) || defined(CONFIG_LEDS_RT8547) || defined(CONFIG_LEDS_KTD2692)
 			if (flash_data->opcode ==
 				CAMERA_SENSOR_FLASH_OP_FIRETORCH) {
 				rc = cam_flash_torch(fctrl, flash_data);
@@ -1023,7 +1110,7 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 				}
 			}
 		}
-#if IS_REACHABLE(CONFIG_LEDS_S2MPB02)
+#if IS_REACHABLE(CONFIG_LEDS_S2MPB02) || defined(CONFIG_LEDS_KTD2692)
 		else if ((flash_data->opcode ==
 			CAMERA_SENSOR_FLASH_OP_FIRETORCH) &&
 			(flash_data->cmn_attr.is_settings_valid) &&
@@ -1068,6 +1155,7 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 			(flash_data->cmn_attr.is_settings_valid) &&
 			(flash_data->cmn_attr.request_id == req_id)) {
 			if (fctrl->flash_state == CAM_FLASH_STATE_START) {
+#if !defined(CONFIG_LEDS_KTD2692)
 				rc = cam_flash_duration(fctrl, flash_data);
 				if (rc) {
 					CAM_ERR(CAM_FLASH,
@@ -1075,6 +1163,7 @@ int cam_flash_pmic_apply_setting(struct cam_flash_ctrl *fctrl,
 						rc);
 					goto apply_setting_err;
 				}
+#endif
 			}
 		} else if (flash_data->opcode == CAM_PKT_NOP_OPCODE) {
 			CAM_DBG(CAM_FLASH, "NOP Packet");
@@ -1805,7 +1894,7 @@ int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg)
 			flash_query_info =
 				(struct cam_flash_query_curr *)cmd_buf;
 
-#if !IS_REACHABLE(CONFIG_LEDS_S2MPB02)
+#if !IS_REACHABLE(CONFIG_LEDS_S2MPB02) && !defined(CONFIG_LEDS_KTD2692)
 			rc = cam_flash_led_prepare(fctrl->switch_trigger,
 				QUERY_MAX_AVAIL_CURRENT, &query_curr_ma,
 				soc_private->is_wled_flash);
@@ -1993,6 +2082,8 @@ void cam_flash_shutdown(struct cam_flash_ctrl *fctrl)
 	s2mpb02_led_en(S2MPB02_TORCH_LED_1, 0, S2MPB02_LED_TURN_WAY_I2C);/* torch, off */
 	s2mpb02_led_en(S2MPB02_FLASH_LED_1, 0, S2MPB02_LED_TURN_WAY_GPIO);/* flash, off */
 	s2mpb02_led_en(S2MPB02_TORCH_LED_1, 0, S2MPB02_LED_TURN_WAY_GPIO);/* torch, off */
+#elif defined(CONFIG_LEDS_KTD2692)
+	ktd2692_led_mode_ctrl(KTD2692_DISABLES_TORCH_FLASH_MODE, 0);
 #endif
 
 	if (fctrl->flash_state == CAM_FLASH_STATE_INIT)

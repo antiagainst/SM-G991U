@@ -35,8 +35,6 @@
 #include <net/ip6_fib.h>
 #include <net/ip6_route.h>
 
-#include <linux/ipc_logging.h>
-
 static struct kmem_cache *fib6_node_kmem __read_mostly;
 
 struct fib6_cleaner {
@@ -77,24 +75,16 @@ static void fib6_gc_timer_cb(struct timer_list *t);
 
 static void fib6_walker_link(struct net *net, struct fib6_walker *w)
 {
-	net_log("--> [%s]%pS -> %s head: (%llx %llx %llx), new: %llx\n", current->comm, __builtin_return_address(0), __func__, 			
-			net->ipv6.fib6_walkers.prev->next, &net->ipv6.fib6_walkers, net->ipv6.fib6_walkers.next->prev, &w->lh);
 	write_lock_bh(&net->ipv6.fib6_walker_lock);
 	list_add(&w->lh, &net->ipv6.fib6_walkers);
 	write_unlock_bh(&net->ipv6.fib6_walker_lock);
-	net_log("<-- %llx-[%llx]-%llx\n", 	
-			w->lh.prev, &w->lh, w->lh.next);
 }
 
 static void fib6_walker_unlink(struct net *net, struct fib6_walker *w)
 {
-	net_log("--> [%s]%pS -> %s node: %llx-[%llx]-%llx\n", current->comm, __builtin_return_address(0), __func__, 			
-			w->lh.prev, &w->lh, w->lh.next);
 	write_lock_bh(&net->ipv6.fib6_walker_lock);
 	list_del(&w->lh);
 	write_unlock_bh(&net->ipv6.fib6_walker_lock);
-	net_log("<-- %llx-[%llx]-%llx\n", 	
-			w->lh.prev, &w->lh, w->lh.next);
 }
 
 static int fib6_new_sernum(struct net *net)
@@ -983,6 +973,8 @@ static void fib6_purge_rt(struct fib6_info *rt, struct fib6_node *fn,
 {
 	struct fib6_table *table = rt->fib6_table;
 
+	/* Flush all cached dst in exception table */
+	rt6_flush_exceptions(rt);
 	fib6_drop_pcpu_from(rt, table);
 
 	if (rt->nh && !list_empty(&rt->nh_list))
@@ -1849,9 +1841,6 @@ static void fib6_del_route(struct fib6_table *table, struct fib6_node *fn,
 	net->ipv6.rt6_stats->fib_rt_entries--;
 	net->ipv6.rt6_stats->fib_discarded_routes++;
 
-	/* Flush all cached dst in exception table */
-	rt6_flush_exceptions(rt);
-
 	/* Reset round-robin state, if necessary */
 	if (rcu_access_pointer(fn->rr_ptr) == rt)
 		fn->rr_ptr = NULL;
@@ -2447,8 +2436,6 @@ static void ipv6_route_seq_setup_walk(struct ipv6_route_iter *iter,
 	iter->w.args = iter;
 	iter->sernum = iter->w.root->fn_sernum;
 	INIT_LIST_HEAD(&iter->w.lh);
-	net_log("--> [%s]%pS -> %s init_node: %llx-[%llx]-%llx\n", current->comm, __builtin_return_address(0), __func__, 			
-			iter->w.lh.prev, &iter->w.lh, iter->w.lh.next);
 	fib6_walker_link(net, &iter->w);
 }
 

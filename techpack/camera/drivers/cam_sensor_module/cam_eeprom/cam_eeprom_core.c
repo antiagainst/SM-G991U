@@ -5,6 +5,7 @@
 
 #include <linux/module.h>
 #include <linux/crc32.h>
+#include <linux/firmware.h>
 #include <media/cam_sensor.h>
 
 #include "cam_eeprom_core.h"
@@ -15,6 +16,10 @@
 #include <linux/ctype.h>
 
 #include "cam_notifier.h"
+
+#if defined(CONFIG_SEC_R9Q_PROJECT)
+#define REAR3_DUAL_CAL_FW_NAME "multical.bin"
+#endif
 
 #if defined(CONFIG_SEC_P3Q_PROJECT)
 #define FORCE_DISABLE_REGULATOR
@@ -70,7 +75,7 @@ char front_tof_cam_cal_check[SYSFS_FW_VER_SIZE] = "NULL";
 char bokeh_module_fw_ver[FROM_MODULE_FW_INFO_SIZE+1];
 #endif
 
-#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT)
+#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT) || defined(CONFIG_SEC_R9Q_PROJECT)
 char rear3_module_fw_ver[FROM_MODULE_FW_INFO_SIZE+1];
 #endif
 
@@ -372,7 +377,7 @@ static int cam_eeprom_module_info_set_load_version(int rev, uint32_t hasSubCalda
 	sprintf(rear3_fw_full_ver, "%s %s %s\n", bokeh_module_fw_ver, bokeh_module_fw_ver,bokeh_module_fw_ver);
 #endif
 
-#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT)
+#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT) || defined(CONFIG_SEC_R9Q_PROJECT)
 	if (mInfo->type == SEC_TELE_SENSOR) {
 		ConfIdx = ADDR_M_FW_VER;
 		memset(rear3_module_fw_ver, 0x00, sizeof(rear3_module_fw_ver));
@@ -648,6 +653,18 @@ static int cam_eeprom_module_info_set_dual_tilt(eDualTiltMode tiltMode, uint32_t
 				offset_max_err          = 0x07E4;
 				offset_avg_err          = 0x07E8;
 				offset_project_cal_type = 0x0108;
+#if defined(CONFIG_SEC_B2Q_PROJECT)
+				offset_dll_ver          = 0x007A;
+				offset_x                = 0x00B8;
+				offset_y                = 0x00BC;
+				offset_z                = 0x00C0;
+				offset_sx               = 0x00DC;
+				offset_sy               = 0x00E0;
+				offset_range            = 0x02D2;
+				offset_max_err          = 0x02D6;
+				offset_avg_err          = 0x02DA;
+				offset_project_cal_type = 0x02DE;
+#endif
 				break;
 
 			case DUAL_TILT_FRONT:
@@ -919,13 +936,18 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 	int             rc = 0;
 
 	uint32_t        ConfAddr 	  = 0;
-#if defined(CONFIG_SAMSUNG_REAR_DUAL) || defined(CONFIG_SAMSUNG_REAR_TRIPLE) || defined(CONFIG_SAMSUNG_REAR_TOF) || defined(CONFIG_SAMSUNG_FRONT_DUAL) || defined(CONFIG_SAMSUNG_FRONT_TOF) || defined(CONFIG_SAMSUNG_REAR_QUADRA)
+#if defined(CONFIG_SAMSUNG_REAR_TRIPLE) || defined(CONFIG_SAMSUNG_REAR_TOF) || defined(CONFIG_SAMSUNG_FRONT_DUAL) || defined(CONFIG_SAMSUNG_FRONT_TOF) || defined(CONFIG_SAMSUNG_REAR_QUADRA)
 	uint32_t        ConfSize      = 0;
 #endif
 	uint32_t        hasSubCaldata = 0;
 
 	ModuleInfo_t 	mInfo;
 	ModuleInfo_t 	mInfoSub;
+#if defined(CONFIG_SEC_R9Q_PROJECT)
+	const struct firmware *fw = NULL;
+	struct device         *dev = e_ctrl->soc_info.dev;
+	uint32_t               fw_size;
+#endif
 
 #if 0//TEMP_8350
 	unsigned int rev = sec_hw_rev();
@@ -993,7 +1015,7 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 #endif
 			break;
 
-#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT)
+#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT) || defined(CONFIG_SEC_R9Q_PROJECT)
 		case SEC_TELE_SENSOR:
 			strlcpy(mInfo.typeStr, "Rear3", FROM_MODULE_FW_INFO_SIZE);
 			mInfo.typeStr[FROM_MODULE_FW_INFO_SIZE-1] = '\0';
@@ -1277,7 +1299,7 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 #endif //!defined(CONFIG_SAMSUNG_FRONT_TOP_EEPROM)
 	}
 #endif //#if defined(CONFIG_SAMSUNG_FRONT_TOP)
-#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT)
+#if defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT) || defined(CONFIG_SEC_R9Q_PROJECT)
 	else if ((e_ctrl->soc_info.index == SEC_WIDE_SENSOR)
 		|| (e_ctrl->soc_info.index == SEC_ULTRA_WIDE_SENSOR)
 		|| (e_ctrl->soc_info.index == SEC_TELE_SENSOR)
@@ -1353,6 +1375,17 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 						SIZE_S_DUAL_CAL, e_ctrl->cal_data.mapdata, "rear3 tele", &mInfo);
 				}
 			}
+#if defined(CONFIG_SEC_R9Q_PROJECT)
+			/* Load FW */
+			rc = request_firmware(&fw, REAR3_DUAL_CAL_FW_NAME, dev);
+			if (rc) {
+				CAM_ERR(CAM_EEPROM, "Failed to locate %s", REAR3_DUAL_CAL_FW_NAME);
+				return rc;
+			}
+
+			fw_size = fw->size;
+			memcpy(rear3_dual_cal,fw->data,fw_size);
+#endif
 		}
 #endif  // defined(CONFIG_SEC_P3Q_PROJECT) || defined(CONFIG_SEC_O3Q_PROJECT)
 #endif  // defined(CONFIG_SAMSUNG_REAR_TRIPLE) || defined(CONFIG_SAMSUNG_REAR_QUADRA)
@@ -1409,13 +1442,17 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 			AfIdx_t rear_idx[] = {
 				{AF_CAL_NEAR_IDX, AF_CAL_NEAR_OFFSET_FROM_AF},
 				{AF_CAL_FAR_IDX, AF_CAL_FAR_OFFSET_FROM_AF},
+#if !defined(CONFIG_SEC_R9Q_PROJECT) 
 				{AF_CAL_M1_IDX, AF_CAL_M1_OFFSET_FROM_AF}
+#endif
 			};
 
 			AfIdx_t rear3_idx[] = {
 				{AF_CAL_NEAR_IDX, AF_CAL_NEAR_OFFSET_FROM_AF},
 				{AF_CAL_FAR_IDX, AF_CAL_FAR_OFFSET_FROM_AF},
+#if !defined(CONFIG_SEC_R9Q_PROJECT) && !defined(CONFIG_SEC_Q2Q_PROJECT)
 				{AF_CAL_M1_IDX, AF_CAL_M1_OFFSET_FROM_AF}
+#endif
 			};
 
 			cam_eeprom_module_info_set_afcal(ADDR_M_AF, rear_idx, sizeof(rear_idx)/sizeof(rear_idx[0]),
@@ -1428,6 +1465,18 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 #endif
 
 #if defined(CONFIG_SAMSUNG_REAR_DUAL)
+		/* AF Cal. data read */
+		{
+                        AfIdx_t rear_idx[] = {
+                                {AF_CAL_NEAR_IDX, AF_CAL_NEAR_OFFSET_FROM_AF},
+                                {AF_CAL_FAR_IDX, AF_CAL_FAR_OFFSET_FROM_AF},
+                                {AF_CAL_M1_IDX, AF_CAL_M1_OFFSET_FROM_AF}
+                        };
+
+                        cam_eeprom_module_info_set_afcal(ADDR_M_AF, rear_idx, sizeof(rear_idx)/sizeof(rear_idx[0]),
+                                e_ctrl->cal_data.mapdata, rear_af_cal_str, sizeof(rear_af_cal_str));
+		}
+
 		/* rear2 sw dual cal */
 		mInfo.mVer.dual_cal = rear2_dual_cal;
 		mInfo.mVer.DualTilt = &rear2_dual;
@@ -1631,11 +1680,19 @@ static int cam_eeprom_update_module_info(struct cam_eeprom_ctrl_t *e_ctrl)
 	}
 
 	// Probe Timing different for each model
+#if defined(CONFIG_SEC_P3Q_PROJECT)
 	if (SEC_TELE2_SENSOR == e_ctrl->soc_info.index)
 	{
 		is_eeprom_wacom_update_notifier();
 	}
+#elif defined(CONFIG_SEC_Q2Q_PROJECT)
+	if (SEC_FRONT_TOP_SENSOR == e_ctrl->soc_info.index)
+	{
+		is_eeprom_wacom_update_notifier();
+	}
+#else
 #endif
+#endif	/* CONFIG_SAMSUNG_WACOM_NOTIFIER */
 
 	return rc;
 }
@@ -1874,7 +1931,7 @@ int32_t cam_eeprom_check_firmware_cal(uint32_t camera_cal_crc, ModuleInfo_t *mIn
 	else
 		CAM_INFO(CAM_EEPROM, "ISP Ver : %c", version_isp);
 
-	if (version_isp != 'Q' && version_isp != 'U' && version_isp != 'A' && version_isp != 'X') {
+	if (version_isp != 'Q' && version_isp != 'U' && version_isp != 'A' && version_isp != 'X' && version_isp != 'E') {
 		CAM_ERR(CAM_EEPROM, "This is not Qualcomm module!");
 
 		if (mInfo->type == SEC_WIDE_SENSOR) {

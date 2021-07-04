@@ -671,7 +671,7 @@ static void max77705_set_wireless_input_current(
 		__pm_stay_awake(charger->wc_current_ws);
 		value.intval = WIRELESS_VRECT_ADJ_ROOM_1;	/* 270mV */
 		psy_do_property(charger->pdata->wireless_charger_name, set,
-				POWER_SUPPLY_EXT_PROP_INPUT_VOLTAGE_REGULATION, value);
+				POWER_SUPPLY_EXT_PROP_WIRELESS_RX_CONTROL, value);
 		msleep(500); /* delay 0.5sec */
 		charger->wc_pre_current = max77705_get_input_current(charger);
 		charger->wc_current = input_current;
@@ -1691,6 +1691,9 @@ static int max77705_chg_set_property(struct power_supply *psy,
 			queue_delayed_work(charger->wqueue, &charger->aicl_work,
 					   msecs_to_jiffies(AICL_WORK_DELAY));
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_TERM_CURRENT:
+		max77705_set_topoff_current(charger, val->intval);
+		break;
 	case POWER_SUPPLY_EXT_PROP_MIN ... POWER_SUPPLY_EXT_PROP_MAX:
 		switch (ext_psp) {
 		case POWER_SUPPLY_EXT_PROP_SURGE:
@@ -1759,9 +1762,6 @@ static int max77705_chg_set_property(struct power_supply *psy,
 			charger->charge_mode = val->intval;
 			charger->misalign_cnt = 0;
 			max77705_chg_set_mode_state(charger, charger->charge_mode);
-			break;
-		case POWER_SUPPLY_EXT_PROP_CURRENT_FULL:
-			max77705_set_topoff_current(charger, val->intval);
 			break;
 #if defined(CONFIG_AFC_CHARGER_MODE)
 		case POWER_SUPPLY_EXT_PROP_AFC_CHARGER_MODE:
@@ -2227,7 +2227,7 @@ static void max77705_wc_current_work(struct work_struct *work)
 		}
 
 		psy_do_property(charger->pdata->wireless_charger_name, set,
-				POWER_SUPPLY_EXT_PROP_INPUT_VOLTAGE_REGULATION, value);
+				POWER_SUPPLY_EXT_PROP_WIRELESS_RX_CONTROL, value);
 		__pm_relax(charger->wc_current_ws);
 	} else {
 		diff_current = charger->wc_pre_current - charger->wc_current;

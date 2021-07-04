@@ -409,7 +409,7 @@ static void isg5320a_get_raw_data(struct isg5320a_data *data, bool log_print)
 		pr_info("%s fail to get data\n", ISG5320A_TAG);
 	} else {
 		temp = ((u32)buf[0] << 8) | (u32)buf[1];
-		if ((temp != 0) && (temp != 0xFFFF))
+		if ((temp != 0) && ((temp & 0xFFF) != 0xFFF))
 			data->cdc = temp;
 
 		temp = ((u32)buf[2] << 8) | (u32)buf[3];

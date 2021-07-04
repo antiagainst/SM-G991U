@@ -1132,6 +1132,9 @@ static int msm_gpio_wakeirq(struct gpio_chip *gc,
 	*parent = GPIO_NO_WAKE_IRQ;
 	*parent_type = IRQ_TYPE_EDGE_RISING;
 
+	if (!test_bit(child, pctrl->skip_wake_irqs))
+		return 0;
+
 	for (i = 0; i < pctrl->soc->nwakeirq_map; i++) {
 		map = &pctrl->soc->wakeirq_map[i];
 		if (map->gpio == child) {
@@ -1201,6 +1204,15 @@ static int msm_gpio_init(struct msm_pinctrl *pctrl)
 		for (i = 0; skip && i < pctrl->soc->nwakeirq_map; i++) {
 			gpio = pctrl->soc->wakeirq_map[i].gpio;
 			set_bit(gpio, pctrl->skip_wake_irqs);
+		}
+		if (pctrl->soc->no_wake_gpios) {
+			for (i = 0; i < pctrl->soc->n_no_wake_gpios; i++) {
+				gpio = pctrl->soc->no_wake_gpios[i];
+				if (test_bit(gpio, pctrl->skip_wake_irqs)) {
+					clear_bit(gpio, pctrl->skip_wake_irqs);
+					msm_gpio_mpm_wake_set(gpio, false);
+				}
+			}
 		}
 	}
 
@@ -1393,7 +1405,8 @@ enum msm_gpio_wake msm_gpio_mpm_wake_get(unsigned int gpio)
 	return val ? MSM_GPIO_WAKE_ENABLED : MSM_GPIO_WAKE_DISABLED;
 }
 EXPORT_SYMBOL(msm_gpio_mpm_wake_get);
-
+#if 0
+/*Legacy code for Disable wakeup irq on previous chipset*/
 static void __msm_gpio_parse_dt_disable_wakeup(struct msm_pinctrl *pctrl)
 {
 	const struct device_node *np = pctrl->dev->of_node;
@@ -1414,7 +1427,7 @@ static void __msm_gpio_parse_dt_disable_wakeup(struct msm_pinctrl *pctrl)
 			pr_warn("can't disable 'wakeup' for gpio-%d (%d)\n", gpio, err);
 	}
 }
-
+#endif
 int msm_pinctrl_probe(struct platform_device *pdev,
 		      const struct msm_pinctrl_soc_data *soc_data)
 {
@@ -1474,7 +1487,8 @@ int msm_pinctrl_probe(struct platform_device *pdev,
 		return ret;
 
 	platform_set_drvdata(pdev, pctrl);
-	__msm_gpio_parse_dt_disable_wakeup(pctrl);
+	/*Legacy code for Disable wakeup irq on previous chipset*/
+	//__msm_gpio_parse_dt_disable_wakeup(pctrl);
 
 	dev_dbg(&pdev->dev, "Probed Qualcomm pinctrl driver\n");
 	return 0;

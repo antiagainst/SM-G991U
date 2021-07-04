@@ -112,7 +112,6 @@ struct subsys_desc {
 	struct subsys_notif_timeout timeout_data;
 #endif /* CONFIG_SETUP_SSR_NOTIF_TIMEOUTS */
 	bool run_fssr;
-	bool run_fssr_prev;
 };
 
 /**
@@ -161,7 +160,6 @@ extern int subsys_force_stop(struct msm_ipc_subsys_request *req);
 extern int subsystem_crashed(const char *name);
 extern void subsys_set_cdsp_silent_ssr(bool value);
 void subsys_set_fssr(struct subsys_device *dev, bool value);
-bool subsys_get_prev_fssr(struct subsys_device *dev);
 void subsys_set_adsp_silent_ssr(bool value);
 int subsys_restart_adsp(void);
 void subsys_set_voice_state(bool value);
@@ -271,4 +269,7 @@ static inline void wakeup_source_trash(struct wakeup_source *ws)
 	__pm_relax(ws);
 }
 
+#if defined(CONFIG_SUPPORT_DUAL_6AXIS) && defined(CONFIG_SEC_FACTORY)
+extern bool is_pretest(void);
+#endif
 #endif

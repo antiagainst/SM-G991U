@@ -1404,13 +1404,19 @@ static void device_links_purge(struct device *dev)
 	device_links_write_unlock();
 }
 
-extern int s2mpb02_reg_probe;
+#ifdef CONFIG_QGKI
+extern int i2c_gpio_init_done;
+#endif
 static void fw_devlink_link_device(struct device *dev)
 {
 	int fw_ret;
 
 	mutex_lock(&defer_fw_devlink_lock);
-	if (!defer_fw_devlink_count && s2mpb02_reg_probe)
+	if (!defer_fw_devlink_count
+#ifdef CONFIG_QGKI
+		&& i2c_gpio_init_done
+#endif
+)
 		device_link_add_missing_supplier_links();
 
 	/*

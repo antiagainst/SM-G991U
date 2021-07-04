@@ -517,8 +517,13 @@ static void dpm_watchdog_handler(struct timer_list *t)
 
 	dev_emerg(wd->dev, "**** DPM device timeout ****\n");
 	show_stack(wd->tsk, NULL);
-	panic("%s %s: unrecoverable failure\n",
-		dev_driver_string(wd->dev), dev_name(wd->dev));
+
+	if(!strcmp(dev_driver_string(wd->dev), "usb"))
+		dev_warn(wd->dev, "**** DPM usb watchdog warning %s : %s\n",
+			dev_driver_string(wd->dev), dev_name(wd->dev)); 
+	else
+		panic("%s %s: unrecoverable failure\n",
+			dev_driver_string(wd->dev), dev_name(wd->dev));
 }
 
 /**

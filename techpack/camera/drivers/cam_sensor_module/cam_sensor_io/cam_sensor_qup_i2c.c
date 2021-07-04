@@ -31,8 +31,12 @@ static int32_t cam_qup_i2c_rxdata(
 		},
 	};
 	rc = i2c_transfer(dev_client->adapter, msgs, 2);
-	if (rc < 0)
+	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "failed 0x%x", saddr);
+#if defined(CONFIG_SEC_ABC)
+		sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
+	}	
 	return rc;
 }
 
@@ -52,8 +56,12 @@ static int32_t cam_qup_i2c_txdata(
 		 },
 	};
 	rc = i2c_transfer(dev_client->client->adapter, msg, 1);
-	if (rc < 0)
+	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "failed 0x%x", saddr);
+#if defined(CONFIG_SEC_ABC)
+		sec_abc_send_event("MODULE=camera@INFO=camera_error");
+#endif
+	}
 	return rc;
 }
 

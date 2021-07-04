@@ -2109,6 +2109,12 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 			return -EINVAL;
 		}
 
+#if defined(CONFIG_SEC_R9Q_PROJECT)
+		if ((power_setting->seq_type == SENSOR_VIO)
+			&& (NULL  != strstr(soc_info->dev_name, "eeprom"))) {
+			msleep(20);
+		}
+#endif
 		CAM_DBG(CAM_SENSOR, "seq_type %d", power_setting->seq_type);
 
 		switch (power_setting->seq_type) {

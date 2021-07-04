@@ -18,6 +18,7 @@
 #include <linux/suspend.h>
 #include <linux/cpu.h>
 #include <linux/kobject.h>
+#include <linux/timer.h>
 
 #define MAX_BUF_SIZE	1024
 #define MIN(a, b)     (((a) < (b)) ? (a) : (b))
@@ -34,6 +35,12 @@ struct freq_qos_request min_req[NUM_CPUS][CFLM_MAX_ITEM];
 struct input_info {
 	int min;
 	int max;
+	u64 time_in_min_limit;
+	u64 time_in_max_limit;
+	u64 time_in_over_limit;
+	ktime_t last_min_limit_time;
+	ktime_t last_max_limit_time;
+	ktime_t last_over_limit_time;
 };
 struct input_info freq_input[CFLM_MAX_ITEM];
 
@@ -349,7 +356,7 @@ static bool cflm_max_lock_need_restore(void)
 	return true;
 }
 
-static bool cflm_high_pri_min_lock_required(void) 
+static bool cflm_high_pri_min_lock_required(void)
 {
 	if ((int)param.over_limit <= 0)
 		return false;
@@ -390,11 +397,33 @@ static void cflm_freq_decision(int type, int new_min, int new_max)
 			__func__, type, new_min, new_max);
 
 	/* update input freq */
-	if (new_min != 0) 
+	if (new_min != 0) {
 		freq_input[type].min = new_min;
+		if ((new_min == LIMIT_RELEASE || new_min == param.ltl_min_freq) &&
+			freq_input[type].last_min_limit_time != 0) {
+			freq_input[type].time_in_min_limit += ktime_to_ms(ktime_get()-
+				freq_input[type].last_min_limit_time);
+			freq_input[type].last_min_limit_time = 0;
+		}
+		if (new_min != LIMIT_RELEASE && new_min != param.ltl_min_freq &&
+			freq_input[type].last_min_limit_time == 0) {
+			freq_input[type].last_min_limit_time = ktime_get();
+		}
+	}
 
-	if (new_max != 0)
+	if (new_max != 0) {
 		freq_input[type].max = new_max;
+		if ((new_max == LIMIT_RELEASE || new_max == param.big_max_freq) &&
+			freq_input[type].last_max_limit_time != 0) {
+			freq_input[type].time_in_max_limit += ktime_to_ms(ktime_get() -
+				freq_input[type].last_max_limit_time);
+			freq_input[type].last_max_limit_time = 0;
+		}
+		if (new_max != LIMIT_RELEASE && new_max != param.big_max_freq &&
+			freq_input[type].last_max_limit_time == 0) {
+			freq_input[type].last_max_limit_time = ktime_get();
+		}
+	}
 
 	if (new_min > 0) {
 		if (new_min < param.ltl_min_freq) {
@@ -406,7 +435,7 @@ static void cflm_freq_decision(int type, int new_min, int new_max)
 		pr_info("%s: new_min=%d, ltl_max=%d, over_limit=%d\n", __func__,
 				new_min, param.ltl_max_freq, param.over_limit);
 		if ((type == CFLM_USERSPACE || type == CFLM_TOUCH) &&
-			cflm_high_pri_min_lock_required()) { // if high-priority min lock is requested 
+			cflm_high_pri_min_lock_required()) {
 			if (freq_input[CFLM_USERSPACE].max > 0) {
 				need_update_user_max = true;
 				new_user_max = MAX((int)param.over_limit, freq_input[CFLM_USERSPACE].max);
@@ -455,11 +484,11 @@ static void cflm_freq_decision(int type, int new_min, int new_max)
 		}
 
 		if ((type == CFLM_USERSPACE) && // if userspace maxlock is being set
-			cflm_high_pri_min_lock_required()) { // if high priority min lock is already set 
+			cflm_high_pri_min_lock_required()) {
 			need_update_user_max = true;
 			new_user_max = MAX((int)param.over_limit, freq_input[CFLM_USERSPACE].max);
 			pr_info("%s: force up new_max %d => %d, userspace_min=%d, touch_min=%d, ltl_max=%d\n",
-					__func__, new_max, new_user_max, freq_input[CFLM_USERSPACE].min, 
+					__func__, new_max, new_user_max, freq_input[CFLM_USERSPACE].min,
 					freq_input[CFLM_TOUCH].min, param.ltl_max_freq);
 		}
 
@@ -478,8 +507,19 @@ static void cflm_freq_decision(int type, int new_min, int new_max)
 						FREQ_QOS_MAX_DEFAULT_VALUE);
 	}
 
+	if ((freq_input[type].min <= (int)param.ltl_max_freq || new_user_max != (int)param.over_limit) &&
+		freq_input[type].last_over_limit_time != 0) {
+		freq_input[type].time_in_over_limit += ktime_to_ms(ktime_get() -
+			freq_input[type].last_over_limit_time);
+		freq_input[type].last_over_limit_time = 0;
+	}
+	if (freq_input[type].min > (int)param.ltl_max_freq && new_user_max == (int)param.over_limit &&
+		freq_input[type].last_over_limit_time == 0) {
+		freq_input[type].last_over_limit_time = ktime_get();
+	}
+
 	if (need_update_user_max) {
-		pr_info("%s: update_user_max is true\n", __func__); 
+		pr_info("%s: update_user_max is true\n", __func__);
 		if (new_user_max > param.big_max_freq) {
 			pr_info("%s: too high freq(%d), set to %d\n",
 			__func__, new_user_max, param.big_max_freq);
@@ -610,6 +650,44 @@ out:
 	return ret;
 }
 
+static ssize_t limit_stat_show(struct kobject *kobj,
+					struct kobj_attribute *attr,
+					char *buf)
+{
+
+	ssize_t len = 0;
+	int i, j = 0;
+
+	mutex_lock(&cflm_mutex);
+	for (i = 0; i < CFLM_MAX_ITEM; i++) {
+		if (freq_input[i].last_min_limit_time != 0) {
+			freq_input[i].time_in_min_limit += ktime_to_ms(ktime_get() -
+				freq_input[i].last_min_limit_time);
+			freq_input[i].last_min_limit_time = ktime_get();
+		}
+
+		if (freq_input[i].last_max_limit_time != 0) {
+			freq_input[i].time_in_max_limit += ktime_to_ms(ktime_get() -
+				freq_input[i].last_max_limit_time);
+			freq_input[i].last_max_limit_time = ktime_get();
+		}
+
+		if (freq_input[i].last_over_limit_time != 0) {
+			freq_input[i].time_in_over_limit += ktime_to_ms(ktime_get() -
+				freq_input[i].last_over_limit_time);
+			freq_input[i].last_over_limit_time = ktime_get();
+		}
+	}
+
+	for (j = 0; j < CFLM_MAX_ITEM; j++) {
+		len += snprintf(buf + len, MAX_BUF_SIZE - len, "%llu %llu %llu\n",
+				freq_input[j].time_in_min_limit, freq_input[j].time_in_max_limit,
+				freq_input[j].time_in_over_limit);
+	}
+
+	mutex_unlock(&cflm_mutex);
+	return len;
+}
 
 /* sysfs in /sys/power */
 static struct kobj_attribute cpufreq_table = {
@@ -646,7 +724,15 @@ static struct kobj_attribute over_limit = {
 	},
 	.show	= over_limit_show,
 	.store	= over_limit_store,
-}; 
+};
+
+static struct kobj_attribute limit_stat = {
+	.attr	= {
+		.name = "limit_stat",
+		.mode = 0644
+	},
+	.show	= limit_stat_show,
+};
 
 int set_freq_limit(unsigned int id, unsigned int freq)
 {
@@ -818,6 +904,12 @@ static int __init cflm_init(void)
 	ret = sysfs_create_file(power_kobj, &over_limit.attr);
 	if (ret) {
 		pr_err("Unable to create over_limit\n");
+		goto probe_failed;
+	}
+
+	ret = sysfs_create_file(power_kobj, &limit_stat.attr);
+	if (ret) {
+		pr_err("Unable to create limit_stat\n");
 		goto probe_failed;
 	}
 

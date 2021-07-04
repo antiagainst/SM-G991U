@@ -623,6 +623,39 @@ static ssize_t accel_dhr_sensor_info_show(struct device *dev,
 	return snprintf(buf, PAGE_SIZE, "\"FULL_SCALE\":\"%uG\"\n", fullscale);
 }
 
+static ssize_t accel_turn_over_crash_show(struct device *dev,
+	struct device_attribute *attr, char *buf)
+{
+	struct adsp_data *data = dev_get_drvdata(dev);
+
+	pr_info("[FACTORY] %s: %d, \n", __func__, data->turn_over_crash);
+	return snprintf(buf, PAGE_SIZE, "%d\n", data->turn_over_crash);
+}
+
+static ssize_t accel_turn_over_crash_store(struct device *dev,
+	struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct adsp_data *data = dev_get_drvdata(dev);
+	int32_t msg_buf[2] = {0, };
+
+	if (sysfs_streq(buf, "1")) {
+		data->turn_over_crash = 1;
+		msg_buf[1] = 1;
+	} else if (sysfs_streq(buf, "0")) {
+		data->turn_over_crash = 0;
+		msg_buf[1] = 0;
+	} else {
+		pr_info("[FACTORY] %s: wrong value\n", __func__);
+		return size;
+	}
+
+	adsp_unicast(msg_buf, sizeof(msg_buf), MSG_ACCEL,
+		0, MSG_TYPE_OPTION_DEFINE);
+	pr_info("[FACTORY] %s: %d, \n", __func__, msg_buf[1]);
+
+	return size;
+}
+
 static DEVICE_ATTR(name, 0444, accel_name_show, NULL);
 static DEVICE_ATTR(vendor, 0444, accel_vendor_show, NULL);
 static DEVICE_ATTR(type, 0444, sensor_type_show, NULL);
@@ -642,6 +675,8 @@ static DEVICE_ATTR(dhr_sensor_info, 0444,
 static DEVICE_ATTR(dhr_sensor_info, 0440,
 	accel_dhr_sensor_info_show, NULL);
 #endif
+static DEVICE_ATTR(turn_over_crash, 0664,
+	accel_turn_over_crash_show, accel_turn_over_crash_store);
 
 static struct device_attribute *acc_attrs[] = {
 	&dev_attr_name,
@@ -653,6 +688,7 @@ static struct device_attribute *acc_attrs[] = {
 	&dev_attr_reactive_alert,
 	&dev_attr_lowpassfilter,
 	&dev_attr_dhr_sensor_info,
+	&dev_attr_turn_over_crash,
 	NULL,
 };
 

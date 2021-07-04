@@ -215,7 +215,6 @@ static ssize_t mag_dhr_sensor_info_show(struct device *dev,
 static DEVICE_ATTR(name, 0444, mag_name_show, NULL);
 static DEVICE_ATTR(vendor, 0444, mag_vendor_show, NULL);
 static DEVICE_ATTR(raw_data, 0664, mag_raw_data_show, mag_raw_data_store);
-static DEVICE_ATTR(adc, 0444, mag_raw_data_show, NULL);
 static DEVICE_ATTR(dac, 0444, mag_check_cntl, NULL);
 static DEVICE_ATTR(chk_registers, 0444, mag_check_registers, NULL);
 static DEVICE_ATTR(selftest, 0440, mag_selftest_show, NULL);
@@ -231,7 +230,6 @@ static struct device_attribute *mag_attrs[] = {
 	&dev_attr_name,
 	&dev_attr_vendor,
 	&dev_attr_raw_data,
-	&dev_attr_adc,
 	&dev_attr_dac,
 	&dev_attr_chk_registers,
 	&dev_attr_selftest,

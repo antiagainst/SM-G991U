@@ -16,6 +16,10 @@
 #include <media/cam_sensor.h>
 #include <media/cam_req_mgr.h>
 
+#if defined(CONFIG_SEC_ABC)
+#include <linux/sti/abc_common.h>
+#endif
+
 #define MAX_POWER_CONFIG    12
 
 #define MAX_PER_FRAME_ARRAY 32
@@ -143,7 +147,7 @@ enum camera_flash_opcode {
 	CAMERA_SENSOR_FLASH_OP_FIRELOW,
 	CAMERA_SENSOR_FLASH_OP_FIREHIGH,
 	CAMERA_SENSOR_FLASH_OP_FIREDURATION,
-#if IS_REACHABLE(CONFIG_LEDS_S2MPB02)
+#if IS_REACHABLE(CONFIG_LEDS_S2MPB02) || defined(CONFIG_LEDS_KTD2692)
 	CAMERA_SENSOR_FLASH_OP_FIRETORCH,
 #endif
 	CAMERA_SENSOR_FLASH_OP_MAX,

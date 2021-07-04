@@ -102,6 +102,8 @@ void make_self_dispaly_img_cmds_FC1(struct samsung_display_driver_data *vdd,
 
 		tcmds[i].msg.tx_len = j;
 
+		ss_alloc_ss_txbuf(&tcmds[i], tcmds[i].ss_txbuf);
+
 		LCD_DEBUG("dlen (%d), data_idx (%d)\n", j, data_idx);
 	}
 

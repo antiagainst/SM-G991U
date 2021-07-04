@@ -161,6 +161,11 @@ static int sde_backlight_cooling_cb(struct notifier_block *nb,
 	struct sde_connector *c_conn;
 	struct backlight_device *bd = (struct backlight_device *)data;
 
+// Do not control brightness from termal sensor
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	SDE_ERROR("bl: thermal max brightness cap:%lu => Do not support\n", val);
+	return 0;
+#endif
 	c_conn = bl_get_data(bd);
 	SDE_DEBUG("bl: thermal max brightness cap:%lu\n", val);
 	c_conn->thermal_max_brightness = val;

@@ -494,6 +494,24 @@ static void sde_encoder_phys_vid_vblank_irq(void *arg, int irq_idx)
 	int new_cnt = -1, old_cnt = -1;
 	u32 event = 0;
 	int pend_ret_fence_cnt = 0;
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	struct drm_connector *conn = phys_enc ? phys_enc->connector : NULL;
+	struct samsung_display_driver_data *vdd = NULL;
+	enum ss_display_ndx ndx;
+
+	if (unlikely(!conn || conn->index >= MAX_DISPLAY_NDX)) {
+		SDE_DEBUG("error: invalid drm_conn (%d)\n", conn ? conn->index : -ENODEV);
+		ndx = -1;
+	} else {
+		/* connecotr->index:
+		 * 0: DSI1, 1: DSI2, 2: WB , 3: DP, or
+		 * 0: DSI1, 1: WB , 2: DP
+		 */
+		ndx = conn->index;
+		SDE_DEBUG("ndx(%d)\n", conn->index);
+		vdd = ss_get_vdd(ndx);
+	}
+#endif
 
 	if (!phys_enc)
 		return;
@@ -504,6 +522,15 @@ static void sde_encoder_phys_vid_vblank_irq(void *arg, int irq_idx)
 
 #if defined(CONFIG_DISPLAY_SAMSUNG)
 	SDE_DEBUG_VIDENC(to_sde_encoder_phys_vid(phys_enc), "\n");
+
+	if (vdd) {
+		if (atomic_add_unless(&vdd->ss_vsync_cnt, -1, 0) &&
+			(atomic_read(&vdd->ss_vsync_cnt) == 0)) {
+			wake_up_all(&vdd->ss_vync_wq);
+			pr_info("sde_encoder_phys_vid_vblank_irq  ss_vsync_cnt: %d\n", atomic_read(&vdd->ss_vsync_cnt));
+		}
+		vdd->vblank_irq_time = ktime_to_us(ktime_get());
+	}
 #endif
 
 	SDE_ATRACE_BEGIN("vblank_irq");
@@ -567,6 +594,24 @@ not_flushed:
 static void sde_encoder_phys_vid_underrun_irq(void *arg, int irq_idx)
 {
 	struct sde_encoder_phys *phys_enc = arg;
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	struct drm_connector *conn = phys_enc ? phys_enc->connector : NULL;
+	struct samsung_display_driver_data *vdd = NULL;
+	enum ss_display_ndx ndx;
+
+	if (unlikely(!conn || conn->index >= MAX_DISPLAY_NDX)) {
+		SDE_DEBUG("error: invalid drm_conn (%d)\n", conn ? conn->index : -ENODEV);
+		ndx = -1;
+	} else {
+		/* connecotr->index:
+		 * 0: DSI1, 1: DSI2, 2: WB , 3: DP, or
+		 * 0: DSI1, 1: WB , 2: DP
+		 */
+		ndx = conn->index;
+		SDE_DEBUG("ndx(%d)\n", conn->index);
+		vdd = ss_get_vdd(ndx);
+	}
+#endif
 
 	if (!phys_enc)
 		return;
@@ -578,7 +623,7 @@ static void sde_encoder_phys_vid_underrun_irq(void *arg, int irq_idx)
 	if (phys_enc->parent->encoder_type == DRM_MODE_ENCODER_DSI) {
 		SDE_DEBUG_VIDENC(to_sde_encoder_phys_vid(phys_enc), "underrun\n");
 #if defined(CONFIG_SEC_DEBUG)
-		if (sec_debug_is_enabled()) {
+		if (sec_debug_is_enabled() && ss_panel_attach_get(vdd)) {
 			SDE_EVT32(DRMID(phys_enc->parent), SDE_EVTLOG_FATAL);
 			SDE_DBG_DUMP_WQ("all", "dbg_bus", "vbif_dbg_bus", "panic");
 		}
@@ -1053,6 +1098,24 @@ static void sde_encoder_phys_vid_disable(struct sde_encoder_phys *phys_enc)
 	struct sde_encoder_phys_vid *vid_enc;
 	unsigned long lock_flags;
 	struct intf_status intf_status = {0};
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	struct drm_connector *conn = phys_enc ? phys_enc->connector : NULL;
+	struct samsung_display_driver_data *vdd = NULL;
+	enum ss_display_ndx ndx;
+
+
+	if (unlikely(!conn || conn->index >= MAX_DISPLAY_NDX)) {
+		SDE_DEBUG("error: invalid drm_conn (%d)\n", conn ? conn->index : -ENODEV);
+		ndx = -1;
+	} else {
+		/* connecotr->index:
+		 * 0: DSI1, 1: DSI2, 2: WB , 3: DP, or
+		 * 0: DSI1, 1: WB , 2: DP
+		 */
+		ndx = conn->index;
+		vdd = ss_get_vdd(ndx);
+	}
+#endif
 
 	if (!phys_enc || !phys_enc->parent || !phys_enc->parent->dev ||
 			!phys_enc->parent->dev->dev_private) {
@@ -1067,6 +1130,16 @@ static void sde_encoder_phys_vid_disable(struct sde_encoder_phys *phys_enc)
 				!phys_enc->hw_intf, !phys_enc->hw_ctl);
 		return;
 	}
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	/*
+	 * To guarantee ss_wait_for_vsync operation on power off & suspend sequence.
+	 * Timing generator & dsi clock should be enabled to use vsync irq.
+	 */
+	if (vdd)
+		wait_event_timeout(vdd->ss_vync_wq,
+			atomic_read(&vdd->ss_vsync_cnt) == 0, msecs_to_jiffies(500));
+#endif
 
 	SDE_DEBUG_VIDENC(vid_enc, "\n");
 

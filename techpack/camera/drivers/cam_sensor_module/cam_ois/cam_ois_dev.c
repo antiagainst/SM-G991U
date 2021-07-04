@@ -240,6 +240,9 @@ static int cam_ois_i2c_driver_probe(struct i2c_client *client,
 
 	o_ctrl->gyro_raw_x = 0;
 	o_ctrl->gyro_raw_y = 0;
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+	o_ctrl->gyro_raw_z = 0;
+#endif
 	o_ctrl->efs_cal    = 0;
 
 	mutex_init(&(o_ctrl->ois_mode_mutex));
@@ -380,6 +383,9 @@ static int cam_ois_component_bind(struct device *dev,
 
 	o_ctrl->gyro_raw_x = 0;
 	o_ctrl->gyro_raw_y = 0;
+#if defined(CONFIG_SAMSUNG_OIS_Z_AXIS_CAL)
+	o_ctrl->gyro_raw_z = 0;
+#endif
 	o_ctrl->efs_cal    = 0;
 
 	mutex_init(&(o_ctrl->ois_mode_mutex));

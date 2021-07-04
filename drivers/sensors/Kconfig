@@ -217,3 +217,10 @@ config SENSORS_ISG5320A_SUB
 	  If you say yes here if you use ISG5320A_SUB for grip sub.
 	  This option enables grip sensors using
 	  IMAGIS ISG5320A_SUB device driver for grip sub.
+
+config SENSORS_ISG5320A_R9Q
+	depends on I2C
+	tristate "ISG5320A grip register model featuere"
+	default n
+	help
+	  Say Y here if you use a feature named SENSOR_ISG5320A_R9Q in isg5320a_reg.h for grip.

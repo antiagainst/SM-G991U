@@ -3380,6 +3380,10 @@ static inline void _sde_encoder_trigger_flush(struct drm_encoder *drm_enc,
 	struct sde_encoder_virt *sde_enc;
 	int pend_ret_fence_cnt;
 	struct sde_connector *c_conn;
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	struct samsung_display_driver_data *vdd;
+	int wait_cnt = 200; /* (200 * 0.5ms) * 2 = 200ms */
+#endif
 
 	if (!drm_enc || !phys) {
 		SDE_ERROR("invalid argument(s), drm_enc %d, phys_enc %d\n",
@@ -3408,6 +3412,46 @@ static inline void _sde_encoder_trigger_flush(struct drm_encoder *drm_enc,
 				ctl->idx - CTL_0);
 		return;
 	}
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	if (sde_enc->crtc)
+		vdd = ss_get_vdd(sde_enc->crtc->index);
+	else
+		SDE_DEBUG("invalid crtc\n");
+
+	if (sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_VIDEO_MODE)
+		&& (sde_enc->crtc)) {
+		if (vdd) {
+			/* If video mode, opt, fingermask off */
+			if (vdd->support_optical_fingerprint && vdd->finger_mask_updated && !vdd->finger_mask) {
+				SDE_INFO("[FINGER MASK] mask state:%d updated:%d\n",
+					 vdd->finger_mask, vdd->finger_mask_updated);
+
+				/* Exclusive lock to prevent blink shot */
+				mutex_lock(&vdd->exclusive_tx.ex_tx_lock);
+				vdd->exclusive_tx.enable = 1;
+
+				while (!list_empty(&vdd->cmd_lock.wait_list) && --wait_cnt)
+					usleep_range(500, 500);
+				if (wait_cnt < 200) {
+					LCD_INFO("wait_list wait_cnt:%d, %dms passed\n", wait_cnt, (200-wait_cnt)/2);
+					wait_cnt = 200;
+				}
+
+				while (atomic_long_read(&vdd->cmd_lock.owner) && --wait_cnt)
+					usleep_range(500, 500);
+				if (wait_cnt < 200)
+					LCD_INFO("owner wait_cnt:%d, %dms passed\n", wait_cnt, (200-wait_cnt)/2);
+
+
+				vdd->exclusive_tx.permit_frame_update = 0;
+				ss_set_exclusive_tx_packet(vdd, TX_BRIGHT_CTRL, 1);
+
+				ss_wait_for_vsync(vdd, 1, 0);
+			}
+		}
+	}
+#endif
 
 	/* update pending counts and trigger kickoff ctl flush atomically */
 	spin_lock_irqsave(&sde_enc->enc_spinlock, lock_flags);
@@ -3440,6 +3484,28 @@ static inline void _sde_encoder_trigger_flush(struct drm_encoder *drm_enc,
 	phys->ops.trigger_flush(phys);
 
 	spin_unlock_irqrestore(&sde_enc->enc_spinlock, lock_flags);
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+	if (sde_encoder_check_curr_mode(drm_enc, MSM_DISPLAY_VIDEO_MODE)
+		&& (sde_enc->crtc)) {
+		if (vdd) {
+			SDE_DEBUG("[FINGER MASK]mask state:%d updated:%d.....wait_cnt:%d\n",
+				 vdd->finger_mask, vdd->finger_mask_updated, wait_cnt);
+
+			/* If video mode, opt, fingermask off */
+			if (vdd->support_optical_fingerprint && vdd->finger_mask_updated && !vdd->finger_mask) {
+				ss_brightness_dcs(vdd, 0, BACKLIGHT_FINGERMASK_OFF);
+
+				/* Exclusive unlock to prevent blink shot */
+				ss_set_exclusive_tx_packet(vdd, TX_BRIGHT_CTRL, 0);
+				vdd->exclusive_tx.enable = 0;
+				wake_up_all(&vdd->exclusive_tx.ex_tx_waitq);
+
+				mutex_unlock(&vdd->exclusive_tx.ex_tx_lock);
+			}
+		}
+	}
+#endif
 
 	if (ctl->ops.get_pending_flush) {
 		struct sde_ctl_flush_cfg pending_flush = {0,};
@@ -5587,3 +5653,26 @@ void sde_encoder_recovery_events_handler(struct drm_encoder *encoder,
 	sde_enc = to_sde_encoder_virt(encoder);
 	sde_enc->recovery_events_enabled = enabled;
 }
+
+#if defined(CONFIG_DISPLAY_SAMSUNG)
+struct sde_encoder_phys *ss_get_encoder_phys(struct drm_encoder *drm_enc, int dsi_index)
+{
+	struct sde_encoder_virt *sde_enc;
+	int i;
+
+	if (!drm_enc) {
+		SDE_ERROR("invalid encoder\n");
+		return 0;
+	}
+
+	sde_enc = to_sde_encoder_virt(drm_enc);
+
+	for (i = 0; i < sde_enc->num_phys_encs; i++) {
+		if (i == dsi_index)
+			return sde_enc->phys_encs[i];
+	}
+
+	return 0;
+}
+#endif
+

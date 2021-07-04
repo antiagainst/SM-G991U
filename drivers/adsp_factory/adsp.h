@@ -128,6 +128,7 @@ struct adsp_data {
 #endif
 	uint32_t support_algo;
 	bool restrict_mode;
+	int turn_over_crash;
 };
 
 #ifdef CONFIG_SUPPORT_MOBEAM

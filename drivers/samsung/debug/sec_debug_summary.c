@@ -107,11 +107,6 @@ static inline void __summary_save_dying_msg_for_user_reset_debug(
 #define ARCH_INSTR_SIZE	0x4
 #endif
 
-#ifndef CONFIG_SAMSUNG_PRODUCT_SHIP
-unsigned long sec_delay_check __read_mostly = 1;
-EXPORT_SYMBOL(sec_delay_check);
-#endif
-
 int sec_debug_summary_save_die_info(const char *str, struct pt_regs *regs)
 {
 #ifndef CONFIG_SAMSUNG_PRODUCT_SHIP

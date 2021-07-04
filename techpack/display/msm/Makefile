@@ -203,7 +203,8 @@ msm_drm-$(CONFIG_DISPLAY_SAMSUNG) += samsung/SELF_DISPLAY/self_display_6W3.o \
 	samsung/SELF_DISPLAY/self_display_UM1.o \
 	samsung/SELF_DISPLAY/self_display_XA0.o \
 	samsung/SELF_DISPLAY/self_display_XA1.o \
-	samsung/SELF_DISPLAY/self_display_FC1.o
+	samsung/SELF_DISPLAY/self_display_FC1.o \
+	samsung/SELF_DISPLAY/self_display_FC3.o
 
 msm_drm-$(CONFIG_DISPLAY_SAMSUNG) += samsung/MAFPC/ss_dsi_mafpc_FAB.o \
 	samsung/MAFPC/ss_dsi_mafpc_HAB.o \

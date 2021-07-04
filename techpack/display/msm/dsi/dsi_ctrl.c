@@ -2707,6 +2707,9 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 				unsigned long error)
 {
 	struct dsi_event_cb_info cb_info;
+#if defined(CONFIG_DISPLAY_SAMSUNG) && defined(CONFIG_SEC_DEBUG)
+	struct samsung_display_driver_data *vdd = ss_get_vdd(dsi_ctrl->cell_index);
+#endif
 
 	cb_info = dsi_ctrl->irq_info.irq_err_cb;
 
@@ -2748,7 +2751,7 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 		u32 mask = 0;
 
 #if defined(CONFIG_DISPLAY_SAMSUNG) && defined(CONFIG_SEC_DEBUG)
-		if (sec_debug_is_enabled()) {
+		if (sec_debug_is_enabled() && ss_panel_attach_get(vdd)) {
 			pr_err("dsi FIFO UNDERFLOW error: 0x%lx\n", error);
 			SDE_DBG_DUMP_WQ("sde", "dsi0_ctrl", "dsi0_phy", "dsi1_ctrl", "dsi1_phy",
 				"vbif", "dbg_bus", "dsi_dbg_bus", "vbif_dbg_bus", "panic");
@@ -2769,7 +2772,7 @@ static void dsi_ctrl_handle_error_status(struct dsi_ctrl *dsi_ctrl,
 	/* DSI FIFO UNDERFLOW error */
 	if (error & 0xF00000) {
 #if defined(CONFIG_DISPLAY_SAMSUNG) && defined(CONFIG_SEC_DEBUG)
-		if (sec_debug_is_enabled()) {
+		if (sec_debug_is_enabled() && ss_panel_attach_get(vdd)) {
 			pr_err("dsi FIFO UNDERFLOW error: 0x%lx\n", error);
 			SDE_DBG_DUMP_WQ("sde", "dsi0_ctrl", "dsi0_phy", "dsi1_ctrl", "dsi1_phy",
 				"vbif", "dbg_bus", "dsi_dbg_bus", "vbif_dbg_bus", "panic");

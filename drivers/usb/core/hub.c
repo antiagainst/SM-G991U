@@ -4762,6 +4762,12 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 				retval = hub_set_address(udev, devnum);
 				if (retval >= 0)
 					break;
+#if defined(CONFIG_USB_HOST_SAMSUNG_FEATURE)
+				if (udev->reset_resume && retval < 0) {
+					dev_err(&udev->dev, "set address fail in reset resume\n");
+					break;
+				}
+#endif					
 				msleep(200);
 			}
 			if (retval < 0) {
