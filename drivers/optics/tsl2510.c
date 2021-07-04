@@ -35,6 +35,8 @@
 //#define CONFIG_AMS_OPTICAL_SENSOR_FIFO
 
 /* AWB/Flicker Definition */
+#define FLICKER_SENSOR_ERR_ID_SATURATION  -3
+
 #define ALS_AUTOGAIN
 #define BYTE				2
 #define AWB_INTERVAL		20 /* 20 sample(from 17 to 28) */
@@ -573,6 +575,11 @@ void FFT(int32_t* data, enum fft_size size)
         return;
     }
     for (i = 0; i < size; i++) {
+        if (!tsl2510_data->saturation && data[i] >= 0x3FFF) {
+            ALS_info("DEBUG_FLICKER saturation");
+            tsl2510_data->saturation = true;
+        }
+
         buf_r[i] = ((int64_t)data[i]*(int64_t)hamming[i]) >> 10;        // 16+16-10=22   Q6
         ALS_info("DEBUG_FLICKER data[%d] => %d buf[%d] => %lld", i, data[i], i, buf_r[i]);
     }
@@ -1050,19 +1057,24 @@ static int amsAlg_als_processData(amsAlsContext_t *ctx, amsAlsDataSet_t *inputDa
         ctx->results.irrClear = inputData->datasetArray->clearADC;
         ctx->results.irrWideband = inputData->datasetArray->widebandADC;
 
-        if (ctx->results.irrWideband < ctx->results.irrClear) {
-            ctx->results.IR = 0;
-        }
-        else {
-            tempWb = (WIDEBAND_CONST * AMS_ALS_FACTOR) * ctx->results.irrWideband;
-            tempClear = (CLEAR_CONST * AMS_ALS_FACTOR) * ctx->results.irrClear;
-
-            if (tempWb < tempClear) {
+        if (!tsl2510_data->saturation) {
+            if (ctx->results.irrWideband < ctx->results.irrClear) {
                 ctx->results.IR = 0;
             }
             else {
-                ctx->results.IR = (tempWb - tempClear) / AMS_ALS_FACTOR;
+                tempWb = (WIDEBAND_CONST * AMS_ALS_FACTOR) * ctx->results.irrWideband;
+                tempClear = (CLEAR_CONST * AMS_ALS_FACTOR) * ctx->results.irrClear;
+
+                if (tempWb < tempClear) {
+                    ctx->results.IR = 0;
+                }
+                else {
+                    ctx->results.IR = (tempWb - tempClear) / AMS_ALS_FACTOR;
+                }
             }
+        }
+        else {
+            ctx->results.IR = 0;
         }
     }
 
@@ -2611,11 +2623,19 @@ static void report_als(struct tsl2510_device_data *chip)
 {
     ams_apiAls_t outData;
     static unsigned int als_cnt;
+    int temp_ir = 0;
 
     if (chip->als_input_dev) {
         ams_deviceGetAls(chip->deviceCtx, &outData);
 #ifndef AMS_BUILD
-        input_report_rel(chip->als_input_dev, REL_X, outData.ir + 1);
+        if (chip->saturation) {
+            temp_ir = FLICKER_SENSOR_ERR_ID_SATURATION;
+        }
+        else {
+            temp_ir = outData.ir;
+        }
+
+        input_report_rel(chip->als_input_dev, REL_X, temp_ir + 1);
         input_report_rel(chip->als_input_dev, REL_RY, outData.clear + 1);
         input_report_abs(chip->als_input_dev, ABS_X, outData.time_us + 1);
         input_report_abs(chip->als_input_dev, ABS_Y, outData.ClearGain + 1);
@@ -2623,14 +2643,16 @@ static void report_als(struct tsl2510_device_data *chip)
         input_sync(chip->als_input_dev);
 
         if (als_cnt++ > 10) {
-            ALS_info("%s - I:%d, W:%d, C:%d, TIME:%d, Clear GAIN:%d WB GAIN : %d\n", __func__,
-                outData.ir, outData.wideband, outData.clear, outData.time_us, outData.ClearGain, outData.WBGain);
+            ALS_dbg("%s - I:%d, W:%d, C:%d, TIME:%d, Clear GAIN:%d WB GAIN : %d\n", __func__,
+                temp_ir, outData.wideband, outData.clear, outData.time_us, outData.ClearGain, outData.WBGain);
             als_cnt = 0;
         }
+        else {
+            ALS_info("%s - I:%d, W:%d, C:%d, TIME:%d, Clear GAIN:%d WB GAIN : %d\n", __func__,
+                temp_ir, outData.wideband, outData.clear, outData.time_us, outData.ClearGain, outData.WBGain);
+        }
 #endif
-		ALS_info("%s - I:%d, W:%d, C:%d, TIME:%d, Clear GAIN:%d WB GAIN : %d\n", __func__,
-			outData.ir, outData.wideband, outData.clear, outData.time_us, outData.ClearGain, outData.WBGain);
-        chip->user_ir_data = outData.ir;
+        chip->user_ir_data = temp_ir;
 #ifdef CONFIG_AMS_OPTICAL_SENSOR_EOL_MODE
         if (chip->eol_enable && chip->eol_count >= EOL_SKIP_COUNT) {
             chip->eol_awb += outData.ir;
@@ -2639,6 +2661,7 @@ static void report_als(struct tsl2510_device_data *chip)
         }
 #endif
     }
+    chip->saturation = false;
 }
 
 static void report_flicker(struct tsl2510_device_data *chip)
@@ -2655,7 +2678,7 @@ static void report_flicker(struct tsl2510_device_data *chip)
         input_sync(chip->als_input_dev);
 
         if (flicker_cnt++ > 10) {
-            ALS_info("%s - flicker = %d\n", __func__, flicker);
+            ALS_dbg("%s - flicker = %d\n", __func__, flicker);
             flicker_cnt = 0;
         }
         else {
@@ -4432,6 +4455,7 @@ static void tsl2510_init_var(struct tsl2510_device_data *data)
     data->awb_sample_cnt = 0;
     data->flicker_data_cnt = 0;
     //flicker_data_cnt = 0;
+    data->saturation = false;
 }
 
 static int tsl2510_parse_dt(struct tsl2510_device_data *data)

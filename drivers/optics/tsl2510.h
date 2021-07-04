@@ -1080,6 +1080,7 @@ extern "C" {
         u32 i2c_err_cnt;
         u32 user_ir_data;
         u32 user_flicker_data;
+        bool saturation;
 #ifdef CONFIG_AMS_OPTICAL_SENSOR_EOL_MODE
         char *eol_result;
         u8 eol_enable;

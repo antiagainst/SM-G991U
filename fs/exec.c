@@ -1290,8 +1290,9 @@ int flush_old_exec(struct linux_binprm * bprm)
 	 */
 	acct_arg_size(bprm, 0);
 #ifdef CONFIG_FASTUH_KDP
-	if (kdp_cred_enable && is_kdp_priv_task() && invalid_drive(bprm))
-		panic("\n KDP_NS: Illegal Execution of file #%s#\n", bprm->filename);
+	if (kdp_cred_enable && is_kdp_priv_task() && invalid_drive(bprm)) {
+		//panic("\n KDP_NS: Illegal Execution of file #%s#\n", bprm->filename);
+	}
 #endif
 	retval = exec_mmap(bprm->mm);
 	if (retval)
